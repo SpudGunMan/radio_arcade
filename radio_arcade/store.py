@@ -41,6 +41,8 @@ class SessionStore:
                     pending_action BLOB, chat_sequence INTEGER NOT NULL DEFAULT 0,
                     opaque_sequence INTEGER NOT NULL DEFAULT 0,
                     last_actor TEXT, last_action BLOB,
+                    sync_at REAL NOT NULL DEFAULT 0,
+                    sync_requested_at REAL NOT NULL DEFAULT 0,
                     updated REAL NOT NULL, error TEXT NOT NULL DEFAULT '',
                     hosted INTEGER NOT NULL DEFAULT 0
                 );
@@ -83,23 +85,29 @@ class SessionStore:
                 self.db.execute("ALTER TABLE sessions ADD COLUMN last_action BLOB")
             if "hosted" not in columns:
                 self.db.execute("ALTER TABLE sessions ADD COLUMN hosted INTEGER NOT NULL DEFAULT 0")
+            if "sync_at" not in columns:
+                self.db.execute("ALTER TABLE sessions ADD COLUMN sync_at REAL NOT NULL DEFAULT 0")
+            if "sync_requested_at" not in columns:
+                self.db.execute("ALTER TABLE sessions ADD COLUMN sync_requested_at REAL NOT NULL DEFAULT 0")
 
     def save_session(self, session: dict[str, Any]) -> None:
         with self._lock, self.db:
             self.db.execute("""INSERT INTO sessions
-                (id,game_id,coordinator,players,invited,status,revision,sequence,state,pending_action,chat_sequence,opaque_sequence,last_actor,last_action,updated,error,hosted)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+                (id,game_id,coordinator,players,invited,status,revision,sequence,state,pending_action,chat_sequence,opaque_sequence,last_actor,last_action,sync_at,sync_requested_at,updated,error,hosted)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
                 game_id=excluded.game_id,coordinator=excluded.coordinator,players=excluded.players,
                 invited=excluded.invited,status=excluded.status,revision=excluded.revision,
                 sequence=excluded.sequence,state=excluded.state,pending_action=excluded.pending_action,
                 chat_sequence=excluded.chat_sequence,opaque_sequence=excluded.opaque_sequence,
-                last_actor=excluded.last_actor,last_action=excluded.last_action,
+                last_actor=excluded.last_actor,last_action=excluded.last_action,sync_at=excluded.sync_at,
+                sync_requested_at=excluded.sync_requested_at,
                 updated=excluded.updated,error=excluded.error,hosted=excluded.hosted""",
                 (session["id"], session["game_id"], session["coordinator"], json.dumps(session["players"]),
                  json.dumps(session["invited"]), session["status"], session["revision"], session["sequence"],
                  session["state"], session["pending_action"], session.get("chat_sequence", 0),
                  session.get("opaque_sequence", 0),
-                 session.get("last_actor"), session.get("last_action"),
+                 session.get("last_actor"), session.get("last_action"), session.get("sync_at", 0),
+                 session.get("sync_requested_at", 0),
                  time.time(), session.get("error", ""), int(session.get("hosted", False))))
 
     @staticmethod
@@ -112,6 +120,8 @@ class SessionStore:
                 "chat_sequence": row["chat_sequence"], "opaque_sequence": row["opaque_sequence"],
                 "last_actor": row["last_actor"],
                 "last_action": bytes(row["last_action"]) if row["last_action"] is not None else None,
+                "sync_at": row["sync_at"],
+                "sync_requested_at": row["sync_requested_at"],
                 "updated": row["updated"], "error": row["error"], "hosted": bool(row["hosted"])}
 
     def load_sessions(self) -> list[dict[str, Any]]:

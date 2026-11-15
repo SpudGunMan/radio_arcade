@@ -4,7 +4,7 @@ import os
 import unittest
 
 
-@unittest.skipUnless(importlib.util.find_spec('PySide6'), 'desktop extra required')
+@unittest.skipUnless(importlib.util.find_spec('PySide6.QtTest'), 'desktop extra with QtTest required')
 class ScorchedNavigationTests(unittest.TestCase):
     def setUp(self):
         os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

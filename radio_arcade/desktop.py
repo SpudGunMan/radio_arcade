@@ -11,7 +11,7 @@ import sys
 import time
 from typing import Callable
 
-from PySide6.QtCore import QObject, QPointF, QRectF, QRunnable, QSize, Qt, QThread, QThreadPool, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, QPointF, QRectF, QRunnable, QSettings, QSize, Qt, QThread, QThreadPool, QTimer, Signal, Slot
 from PySide6.QtGui import QBrush, QColor, QFont, QLinearGradient, QPainter, QPainterPath, QRadialGradient, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QFormLayout, QFrame,
     QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
@@ -37,6 +37,134 @@ class ChatListWidget(QListWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.resized.emit()
+
+
+GAME_GLYPHS = {
+    "tic-tac-toe": "✕○",
+    "connect-four": "●四",
+    "battleship": "⚓",
+    "battleship-classic": "⚓",
+    "sea-warfare": "⚔",
+    "scorched-earth": "💥",
+    "hexxagon": "⬡",
+    "signal-siege": "▤",
+    "open-word-tiles": "🔠",
+    "nim": "◆",
+    "pico8-cartridge": "👾",
+    "external-game": "🕹",
+}
+
+
+def game_glyph(game_name: str) -> str:
+    key = game_name.lower().replace(" ", "-").replace("·", "-")
+    for k, v in GAME_GLYPHS.items():
+        if k in key:
+            return v
+    return "◈"
+
+
+class SessionListCard(QWidget):
+    """Compact, scannable summary for one saved async game table."""
+
+    def __init__(self, game: str, status: str, opponent: str, stations: int,
+                 activity: str, unread: int = 0, status_kind: str = "neutral"):
+        super().__init__()
+        self.setObjectName("sessionCardWidget")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setToolTip(f"{game}\n{opponent} · {stations} stations\n{status}\n{activity}" +
+                        (f"\n{unread} unread messages" if unread else ""))
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(8, 7, 8, 7)
+        main_layout.setSpacing(10)
+
+        glyph = QLabel(game_glyph(game))
+        glyph.setObjectName("sessionGlyphIcon")
+        glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        glyph.setFixedSize(38, 38)
+        main_layout.addWidget(glyph, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
+        head.setSpacing(6)
+        title = QLabel(game)
+        title.setObjectName("sessionGameTitle")
+        title.setMinimumWidth(0)
+        title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        title.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        badge = QLabel(status.upper())
+        badge.setObjectName("sessionStatusBadge")
+        badge.setProperty("kind", status_kind)
+        badge.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        head.addWidget(title, 1)
+        head.addWidget(badge, 0)
+        players = QLabel(f"{opponent}  ·  {stations} station{'s' if stations != 1 else ''}" +
+                         (f"  ·  {unread} unread" if unread else ""))
+        players.setObjectName("sessionPlayersLine")
+        players.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        last = QLabel(activity)
+        last.setObjectName("sessionActivityLine")
+        last.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        players.setMinimumWidth(0)
+        players.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        last.setMinimumWidth(0)
+        last.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        layout.addLayout(head)
+        layout.addWidget(players)
+        layout.addWidget(last)
+        main_layout.addLayout(layout, 1)
+        self.setMinimumHeight(66)
+
+
+class HeroWelcomeWidget(QWidget):
+    """Luminous tactical welcome state for when no table is currently selected."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("heroWelcomeWidget")
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setContentsMargins(24, 40, 24, 40)
+        layout.setSpacing(14)
+
+        emblem = QLabel("◈")
+        emblem.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        emblem.setStyleSheet("""
+            font-size: 50px;
+            color: #00f5c4;
+            background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5,
+                stop:0 rgba(0, 245, 196, 0.22), stop:0.65 rgba(0, 245, 196, 0.04), stop:1 transparent);
+            border-radius: 40px;
+            padding: 10px;
+        """)
+        layout.addWidget(emblem)
+
+        eyebrow = QLabel("SPECTRUM ARENA  ·  RADIO ARCADE")
+        eyebrow.setObjectName("eyebrow")
+        eyebrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(eyebrow)
+
+        title = QLabel("Take Your Seat at the Airwaves")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("font-size: 26px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;")
+        layout.addWidget(title)
+
+        sub = QLabel("Select an active table from dispatch, launch a hot-seat practice duel,\nor broadcast an open invitation across the spectrum.")
+        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sub.setWordWrap(True)
+        sub.setStyleSheet("font-size: 13px; color: #94a3b8; max-width: 480px; line-height: 1.5;")
+        layout.addWidget(sub)
+
+        chips = QHBoxLayout()
+        chips.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        chips.setSpacing(8)
+        for icon, text in [("✳", "2.4GHz KISS Broadcast"), ("⌘", "Deterministic Engine"), ("◉", "Hot-Seat Practice")]:
+            chip = QLabel(f"{icon}  {text}")
+            chip.setStyleSheet("background: rgba(255, 255, 255, 0.035); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 999px; padding: 5px 12px; color: #cbd5e1; font-size: 11px; font-weight: 600;")
+            chips.addWidget(chip)
+        layout.addLayout(chips)
 
 
 class ScorchedBattlefield(QWidget):
@@ -244,6 +372,7 @@ class ScorchedBattlefield(QWidget):
 class SettingsDialog(QDialog):
     def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
+        self.setObjectName("settingsDialog")
         self.setWindowTitle("Station settings · Radio Arcade")
         self.setMinimumSize(300, 300)
         self.settings = settings
@@ -255,7 +384,7 @@ class SettingsDialog(QDialog):
         subtitle.setObjectName("muted")
         subtitle.setWordWrap(True)
         outer.addWidget(subtitle)
-        form_host = QWidget()
+        form_host = QWidget(); form_host.setObjectName("settingsFormHost")
         form = QFormLayout(form_host)
         if parent and parent.width() < 500:
             form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
@@ -303,7 +432,7 @@ class SettingsDialog(QDialog):
         form.addRow("Games", self.experimental_games)
         form.addRow("Observer", self.observer)
         form.addRow("DX Cluster URL", self.dx_cluster_url)
-        form_scroll = QScrollArea()
+        form_scroll = QScrollArea(); form_scroll.setObjectName("settingsFormScroll")
         form_scroll.setFrameShape(QFrame.Shape.NoFrame)
         form_scroll.setWidgetResizable(True)
         form_scroll.setWidget(form_host)
@@ -378,13 +507,23 @@ class ArcadeWindow(QMainWindow):
         self.settings = settings
         self.engine: ArcadeService | None = None
         self.unsubscribe = None
-        self.selected_id: str | None = None
+        self._ui_settings = QSettings("Radio Arcade", "Radio Arcade")
+        self.selected_id: str | None = self._ui_settings.value(f"selectedTable/{settings.callsign}") or None
+        self._table_list_initialized = False
+        saved_unread = self._ui_settings.value(f"unreadTables/{settings.callsign}", {})
+        self._unread_by_session: dict[str, int] = {
+            str(key): int(value) for key, value in (saved_unread.items() if isinstance(saved_unread, dict) else [])
+            if str(value).isdigit() and int(value) > 0
+        }
         self._preserve_empty_selection = False
         self._completion_tracker = CompletionTracker()
         self._result_dialog = None
         self._pending_result_id = None
         self._completion_timer = QTimer(self); self._completion_timer.setSingleShot(True)
         self._completion_timer.timeout.connect(self._finish_scorched_result)
+        self._sync_retry_timer = QTimer(self); self._sync_retry_timer.setInterval(1000)
+        self._sync_retry_timer.timeout.connect(self._refresh_sync_retry)
+        self._sync_retry_timer.start()
         self._board_signature = None
         self._last_scorched_animation_key = None
         self._scorched_weapons = {}
@@ -403,32 +542,41 @@ class ArcadeWindow(QMainWindow):
         self._populate_games()
         self._apply_style()
         self._update_status("Starting up", False)
+        self._show_session(None)
         self._update_compact_layout()
 
     def _build_ui(self):
         root = QWidget(); root.setObjectName("root")
         self.setCentralWidget(root)
-        layout = QVBoxLayout(root); layout.setContentsMargins(22, 20, 22, 18); layout.setSpacing(16)
+        layout = QVBoxLayout(root); layout.setContentsMargins(18, 16, 18, 14); layout.setSpacing(14)
         self.root_layout = layout
-        top = QHBoxLayout()
+        top_frame = QFrame(); top_frame.setObjectName("topbarFrame")
+        self.top_frame = top_frame
+        top_layout = QHBoxLayout(top_frame); top_layout.setContentsMargins(16, 8, 16, 8); top_layout.setSpacing(12)
         self.brand = QLabel("◈  RADIO ARCADE"); self.brand.setObjectName("brand")
-        top.addWidget(self.brand)
+        top_layout.addWidget(self.brand)
         self.transport_label = QLabel("DATA2G · RADIO GAMES"); self.transport_label.setObjectName("eyebrow")
-        top.addWidget(self.transport_label); top.addStretch(1)
+        top_layout.addWidget(self.transport_label); top_layout.addStretch(1)
+        status_pill = QFrame(); status_pill.setObjectName("statusPill")
+        self.status_pill = status_pill
+        pill_layout = QHBoxLayout(status_pill); pill_layout.setContentsMargins(10, 4, 12, 4); pill_layout.setSpacing(8)
         self.link_dot = QLabel("●"); self.link_dot.setObjectName("statusDot")
         self.status_label = QLabel("Starting up"); self.status_label.setObjectName("statusText")
-        top.addWidget(self.link_dot); top.addWidget(self.status_label)
+        pill_layout.addWidget(self.link_dot); pill_layout.addWidget(self.status_label)
+        top_layout.addWidget(status_pill)
         self.tx_activity = QLabel(""); self.tx_activity.setObjectName("muted")
-        top.addWidget(self.tx_activity)
+        top_layout.addWidget(self.tx_activity)
         self.tx_toggle = QPushButton("TX ENABLED" if self.settings.tx_enabled else "TX DISABLED")
+        self.tx_toggle.setObjectName("txToggle")
         self.tx_toggle.setCheckable(True); self.tx_toggle.setChecked(self.settings.tx_enabled)
         self.tx_toggle.setToolTip("Allow or block outgoing Data2G traffic")
         self.tx_toggle.toggled.connect(self._set_tx_enabled)
         self.tx_toggle.setEnabled(self.settings.transport != "practice")
-        top.addWidget(self.tx_toggle)
-        self.settings_button = QPushButton("⚙  Settings"); self.settings_button.clicked.connect(self._edit_settings)
-        top.addWidget(self.settings_button)
-        layout.addLayout(top)
+        top_layout.addWidget(self.tx_toggle)
+        self.settings_button = QPushButton("⚙  Settings"); self.settings_button.setObjectName("settingsButton")
+        self.settings_button.clicked.connect(self._edit_settings)
+        top_layout.addWidget(self.settings_button)
+        layout.addWidget(top_frame)
 
         splitter = QSplitter(Qt.Orientation.Horizontal); splitter.setChildrenCollapsible(False)
         self.desktop_splitter = splitter
@@ -442,8 +590,43 @@ class ArcadeWindow(QMainWindow):
         self.session_list.setMinimumHeight(70)
         self.session_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.session_list.setTextElideMode(Qt.TextElideMode.ElideRight)
-        left_layout.addWidget(self.session_list, 1)
+        self.session_search = QLineEdit(); self.session_search.setPlaceholderText("Find game or station…")
+        self.session_search.setClearButtonEnabled(True)
+        self.session_filter = QComboBox(); self.session_filter.addItem("All tables", "all")
+        self.session_filter.addItem("Your move", "your-turn")
+        self.session_filter.addItem("Waiting", "waiting")
+        self.session_filter.addItem("Needs resync", "resync")
+        self.session_filter.addItem("Unread chat", "unread")
+        self.session_search.setMinimumWidth(0)
+        self.session_search.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.session_filter.setMinimumWidth(92)
+        self.session_search.textChanged.connect(self._refresh_sessions)
+        self.session_filter.currentIndexChanged.connect(self._refresh_sessions)
+        table_filter_row = QHBoxLayout(); table_filter_row.setSpacing(6)
+        table_filter_row.addWidget(self.session_search, 1); table_filter_row.addWidget(self.session_filter)
+        left_layout.addLayout(table_filter_row)
+        left_layout.addWidget(self.session_list, 2)
+        self.cq_toggle = QPushButton("⌁  Find a game · Call CQ")
+        self.cq_toggle.setCheckable(True)
+        self.cq_toggle.toggled.connect(self._toggle_cq_panel)
+        left_layout.addWidget(self.cq_toggle)
+        self.cq_scroll = QScrollArea(); self.cq_scroll.setWidgetResizable(True)
+        self.cq_scroll.setObjectName("cqScroll"); self.cq_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.cq_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.cq_scroll.setMaximumHeight(190)
+        self.cq_scroll.hide()
+        cq_content = QWidget(); cq_content.setObjectName("toolsContent")
+        cq_layout = QVBoxLayout(cq_content); cq_layout.setContentsMargins(0, 4, 2, 4); cq_layout.setSpacing(7)
+        self.cq_scroll.setWidget(cq_content)
+        left_layout.addWidget(self.cq_scroll)
+        self.new_game_toggle = QPushButton("＋  Start a new game")
+        self.new_game_toggle.setCheckable(True)
+        self.new_game_toggle.toggled.connect(self._toggle_new_game_setup)
+        left_layout.addWidget(self.new_game_toggle)
         tools_scroll = QScrollArea(); tools_scroll.setWidgetResizable(True)
+        self.tools_scroll = tools_scroll
+        tools_scroll.setMinimumHeight(90)
+        self.new_game_toggle.setChecked(True)
         tools_scroll.setObjectName("toolsScroll"); tools_scroll.setFrameShape(QFrame.Shape.NoFrame)
         tools_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         tools_scroll.viewport().setObjectName("toolsViewport")
@@ -474,24 +657,25 @@ class ArcadeWindow(QMainWindow):
         self.new_button.clicked.connect(self._new_game)
         self.new_button.setMinimumHeight(42)
         tools_layout.addWidget(self.new_button)
-        self.cq_heading = QLabel("FIND A GAME · CQ")
+        self.cq_heading = QLabel("CALLS HEARD RECENTLY")
         self.cq_heading.setObjectName("eyebrow")
-        tools_layout.addWidget(self.cq_heading)
+        cq_layout.addWidget(self.cq_heading)
         self.cq_choice = QComboBox(); self.cq_choice.setObjectName("field")
         self.cq_choice.addItem("Any game", None)
-        tools_layout.addWidget(self.cq_choice)
+        cq_layout.addWidget(self.cq_choice)
         self.cq_send = QPushButton("Call CQ to all stations")
         self.cq_send.clicked.connect(self._call_cq)
-        tools_layout.addWidget(self.cq_send)
-        self.cq_list = QListWidget(); self.cq_list.setMinimumHeight(85)
+        cq_layout.addWidget(self.cq_send)
+        self.cq_list = QListWidget(); self.cq_list.setMinimumHeight(55)
         self.cq_list.setToolTip("CQ calls heard in the last 15 minutes")
-        tools_layout.addWidget(self.cq_list)
+        cq_layout.addWidget(self.cq_list)
         self.cq_answer = QPushButton("Answer selected CQ")
         self.cq_answer.clicked.connect(self._answer_cq)
-        tools_layout.addWidget(self.cq_answer)
+        cq_layout.addWidget(self.cq_answer)
         self.cq_widgets = (self.cq_heading, self.cq_choice, self.cq_send, self.cq_list, self.cq_answer)
         for control in self.cq_widgets:
-            control.setVisible(self.settings.transport == "broadcast" and not self.settings.observer_mode)
+            control.setVisible(True)
+        self._update_cq_visibility()
         self.cq_timer = QTimer(self)
         self.cq_timer.setInterval(60_000)
         self.cq_timer.timeout.connect(self._refresh_cq)
@@ -516,16 +700,15 @@ class ArcadeWindow(QMainWindow):
         self.start_button = QPushButton("Start selected game"); self.start_button.clicked.connect(self._start_game)
         self.start_button.setObjectName("primaryButton")
         self.start_button.setMinimumHeight(42)
+        self.start_button.hide()
         tools_layout.addStretch(1)
         left_layout.addWidget(self.start_button)
         self.forfeit_button = QPushButton("Forfeit game…"); self.forfeit_button.setObjectName("forfeitGame")
         self.forfeit_button.clicked.connect(self._forfeit_game); self.forfeit_button.hide()
-        left_layout.addWidget(self.forfeit_button)
         self.delete_button = QPushButton("Delete selected game…")
         self.delete_button.clicked.connect(self._delete_game)
         self.delete_button.setEnabled(False)
         self.delete_button.hide()
-        left_layout.addWidget(self.delete_button)
         splitter.addWidget(left)
 
         center = self._card("ACTIVE TABLE", "Game workspace")
@@ -537,7 +720,13 @@ class ArcadeWindow(QMainWindow):
         self.result_button.hide(); heading_row.addWidget(self.result_button)
         center_layout.addLayout(heading_row); center_layout.addWidget(self.game_subtitle)
         self.sync_button = QPushButton("↻  Sync / recover state"); self.sync_button.clicked.connect(self._sync_selected)
-        self.sync_button.setVisible(False); center_layout.addWidget(self.sync_button, 0, Qt.AlignmentFlag.AlignLeft)
+        self.sync_button.setVisible(False)
+        self.table_action_row = QHBoxLayout(); self.table_action_row.setSpacing(6)
+        self.table_action_row.addWidget(self.sync_button)
+        self.table_action_row.addWidget(self.forfeit_button)
+        self.table_action_row.addWidget(self.delete_button)
+        self.table_action_row.addStretch(1)
+        center_layout.addLayout(self.table_action_row)
         self.scoreboard_host = QWidget(); self.scoreboard_layout = QVBoxLayout(self.scoreboard_host)
         self.scoreboard_layout.setContentsMargins(0, 0, 0, 0)
         self.scoreboard_compact = QLabel(); self.scoreboard_compact.setObjectName("compactScoreboard")
@@ -553,6 +742,7 @@ class ArcadeWindow(QMainWindow):
         self.board_scroll.setWidgetResizable(True); self.board_scroll.setWidget(self.board_host)
         center_layout.addWidget(self.board_scroll, 1)
         self.accept_button = QPushButton("Accept invitation"); self.accept_button.setObjectName("primaryButton")
+        self.accept_button.hide()
         self.accept_button.clicked.connect(self._accept_invite); center_layout.addWidget(self.accept_button, 0, Qt.AlignmentFlag.AlignCenter)
         splitter.addWidget(center)
 
@@ -587,7 +777,7 @@ class ArcadeWindow(QMainWindow):
         self.compact_tabs = QTabWidget()
         self.compact_tabs.setObjectName("compactTabs")
         self.compact_tabs.tabBar().setExpanding(True)
-        self.compact_tabs.currentChanged.connect(lambda _index: self._size_chat_rows())
+        self.compact_tabs.currentChanged.connect(self._on_compact_tab_changed)
         self.compact_tabs.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.layout_stack = QStackedWidget()
         self.layout_stack.addWidget(splitter)
@@ -617,7 +807,14 @@ class ArcadeWindow(QMainWindow):
 
     def _update_compact_layout(self):
         compact = self.width() < 950
+        narrow = self.width() < 520
+        self.forfeit_button.setText("Forfeit" if narrow else "Forfeit game…")
+        self.delete_button.setText("Delete" if narrow else "Delete selected game…")
+        if self.engine and self.selected_id:
+            try: self.sync_button.setText(self._sync_label_for_session(self.engine.session(self.selected_id)))
+            except KeyError: self.sync_button.setText("↻  Resync table")
         if compact == (self.layout_stack.currentWidget() is self.compact_tabs):
+            self.game_subtitle.setVisible(not compact or self.width() >= 520)
             return
         if compact:
             self._desktop_sizes = self.desktop_splitter.sizes()
@@ -635,7 +832,17 @@ class ArcadeWindow(QMainWindow):
         self.root_layout.setContentsMargins(*( (8, 8, 8, 8) if compact else (22, 20, 22, 18) ))
         self.root_layout.setSpacing(8 if compact else 16)
         self.brand.setText("◈  ARCADE" if compact else "◈  RADIO ARCADE")
+        self.game_subtitle.setVisible(not compact or self.width() >= 520)
         self.transport_label.setVisible(not compact)
+        if hasattr(self, "status_pill"):
+            self.status_pill.setVisible(not compact)
+        if hasattr(self, "top_frame"):
+            self.top_frame.layout().setContentsMargins(*( (6, 0, 6, 0) if compact else (16, 8, 16, 8) ))
+            self.top_frame.setMaximumHeight(36 if compact else 16777215)
+        if hasattr(self, "settings_button"):
+            self.settings_button.setMaximumHeight(28 if compact else 16777215)
+        if hasattr(self, "tx_toggle"):
+            self.tx_toggle.setMaximumHeight(28 if compact else 16777215)
         self.status_label.setVisible(not compact)
         self.tx_activity.setVisible(not compact)
         self.settings_button.setText("⚙" if compact else "⚙  Settings")
@@ -643,10 +850,11 @@ class ArcadeWindow(QMainWindow):
         self.footer_label.setVisible(not compact)
         self.mode_label.setVisible(not compact)
         for pane, headers in zip(self.panes, self.card_headers):
-            pane.layout().setContentsMargins(*( (10, 10, 10, 10) if compact else
+            pane.layout().setContentsMargins(*( (8, 8, 8, 8) if compact and pane is self.panes[1] else
+                                                (10, 10, 10, 10) if compact else
                                                 (14, 14, 14, 14) if pane is self.panes[0] else
                                                 (18, 18, 18, 18) ))
-            pane.layout().setSpacing(6 if compact else 8 if pane is self.panes[0] else 13)
+            pane.layout().setSpacing(4 if compact and pane is self.panes[1] else 6 if compact else 8 if pane is self.panes[0] else 13)
             for header in headers:
                 header.setVisible(not compact)
         self.session_list.setMinimumHeight(50 if compact else 70)
@@ -680,52 +888,269 @@ class ArcadeWindow(QMainWindow):
 
     def _apply_style(self):
         self.setStyleSheet("""
-            QWidget#root { background:#0b1018; color:#e8edf6; font-family:'Inter','Segoe UI',sans-serif; font-size:14px; }
-            QFrame#card { background:#121a26; border:1px solid #263244; border-radius:18px; }
-            QLabel#brand { color:#f5f8ff; font-size:22px; font-weight:800; letter-spacing:2px; }
-            QLabel#eyebrow { color:#66d9c2; font-size:10px; font-weight:800; letter-spacing:2px; }
-            QLabel#cardTitle { color:#f1f4fa; font-size:17px; font-weight:650; }
-            QLabel#gameTitle { color:#f1f4fa; font-size:27px; font-weight:750; }
-            QLabel#muted { color:#8e9bb0; }
-            QLabel#statusText { color:#bcc7d8; font-size:12px; }
-            QLabel#statusDot { color:#607086; font-size:17px; }
-            QLabel#turnBadge { background:#1b2b36; color:#7be3cf; border:1px solid #2a514d; border-radius:9px; padding:10px; font-weight:750; }
-            QLabel#players { background:#0d141f; color:#bdc8d8; border-radius:10px; padding:12px; }
-            QLabel#compactScoreboard { background:#14251f; color:#b8f4d7; border-radius:7px; padding:6px; font-size:11px; }
-            QLabel { color:#d7dfeb; }
-            QPushButton { background:#202c3c; color:#e7edf7; border:1px solid #34445a; border-radius:9px; padding:9px 12px; }
-            QPushButton:hover { background:#2b3b50; border-color:#4b6b81; }
-            QPushButton#forfeitGame { color:#f3bf7a; border-color:#755b3c; }
-            QPushButton:disabled { color:#637086; background:#161f2c; border-color:#252f3e; }
-            QPushButton#primaryButton { color:#071411; font-weight:800; background:#67dfc3; border:0; }
-            QPushButton#primaryButton:hover { background:#89f0d8; }
-            QLineEdit, QComboBox, QSpinBox { background:#0c131e; color:#eaf0f8; border:1px solid #2e3d50; border-radius:8px; padding:9px; selection-background-color:#318b80; }
-            QComboBox QAbstractItemView { background:#111a27; color:#eaf0f8; selection-background-color:#256c65; }
+            QWidget#root {
+                background: qradialgradient(cx:0.5, cy:0, radius: 1.2, fx:0.5, fy:0, stop:0 #141f32, stop:0.45 #0b111b, stop:1 #06090e);
+                color: #f1f5f9;
+                font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
+                font-size: 13px;
+            }
+            QFrame#topbarFrame {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #131c2d, stop:1 #0c1421);
+                border: 1px solid rgba(100, 160, 240, 0.16);
+                border-radius: 14px;
+            }
+            QFrame#statusPill {
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 16px;
+            }
+            QFrame#card {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #111a28, stop:1 #0b111c);
+                border: 1px solid rgba(100, 160, 240, 0.14);
+                border-radius: 18px;
+            }
+            QLabel#brand {
+                color: #ffffff;
+                font-size: 19px;
+                font-weight: 800;
+                letter-spacing: 1.5px;
+            }
+            QLabel#eyebrow {
+                color: #00f5c4;
+                font-size: 10px;
+                font-weight: 800;
+                letter-spacing: 1.8px;
+            }
+            QLabel#cardTitle {
+                color: #ffffff;
+                font-size: 18px;
+                font-weight: 700;
+                letter-spacing: -0.3px;
+            }
+            QLabel#gameTitle {
+                color: #ffffff;
+                font-size: 28px;
+                font-weight: 800;
+                letter-spacing: -0.5px;
+            }
+            QLabel#muted {
+                color: #8292a8;
+                font-size: 12px;
+            }
+            QLabel#statusText {
+                color: #cbd5e1;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            QLabel#statusDot {
+                font-size: 14px;
+                font-weight: 800;
+            }
+            QLabel#turnBadge {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0f2b26, stop:1 #081d1a);
+                color: #00f5c4;
+                border: 1px solid rgba(0, 245, 196, 0.35);
+                border-radius: 10px;
+                padding: 10px 14px;
+                font-weight: 800;
+                font-size: 12px;
+                letter-spacing: 0.5px;
+            }
+            QLabel#turnBadge[turn="mine"] {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #043d34, stop:1 #065548);
+                color: #00f5c4;
+                border: 1px solid #00f5c4;
+            }
+            QLabel#turnBadge[turn="waiting"] {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3d2305, stop:1 #4d2d07);
+                color: #fbbf24;
+                border: 1px solid #f59e0b;
+            }
+            QLabel#turnBadge[turn="alert"] {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #420b16, stop:1 #520f1d);
+                color: #fb7185;
+                border: 1px solid #f43f5e;
+            }
+            QLabel#turnBadge[turn="finished"] {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #251247, stop:1 #32185e);
+                color: #c084fc;
+                border: 1px solid #a855f7;
+            }
+            QLabel#players {
+                background: #090f18;
+                color: #cbd5e1;
+                border: 1px solid #1a283a;
+                border-radius: 12px;
+                padding: 12px 14px;
+                font-family: monospace, -apple-system, sans-serif;
+                font-size: 12px;
+                line-height: 1.6;
+            }
+            QLabel#compactScoreboard {
+                background: #0c1825;
+                color: #7dd3fc;
+                border: 1px solid rgba(56, 189, 248, 0.25);
+                border-radius: 8px;
+                padding: 7px 12px;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            QLabel { color: #d7dfeb; }
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1a2638, stop:1 #131c2a);
+                color: #e2e8f0;
+                border: 1px solid rgba(100, 160, 240, 0.2);
+                border-radius: 9px;
+                padding: 8px 14px;
+                font-weight: 600;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #23334a, stop:1 #192537);
+                border-color: rgba(0, 245, 196, 0.45);
+                color: #ffffff;
+            }
+            QPushButton:pressed {
+                background: #0e1520;
+                border-color: #00f5c4;
+            }
+            QPushButton#forfeitGame {
+                color: #fca5a5;
+                background: rgba(239, 68, 68, 0.1);
+                border: 1px solid rgba(239, 68, 68, 0.32);
+            }
+            QPushButton#forfeitGame:hover {
+                background: rgba(239, 68, 68, 0.22);
+                border-color: #f87171;
+                color: #ffffff;
+            }
+            QPushButton#txToggle {
+                background: #141d2a;
+                color: #64748b;
+                border: 1px solid #233145;
+                border-radius: 9px;
+                padding: 6px 14px;
+                font-weight: 700;
+            }
+            QPushButton#txToggle:checked {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #059669, stop:1 #10b981);
+                color: #ffffff;
+                border: 1px solid #34d399;
+                font-weight: 800;
+            }
+            QPushButton:disabled {
+                color: #475569;
+                background: #0e141f;
+                border-color: #182230;
+            }
+            QPushButton#primaryButton {
+                color: #02201d;
+                font-weight: 800;
+                font-size: 13px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00f5c4, stop:1 #06d6a0);
+                border: none;
+                border-radius: 10px;
+                padding: 9px 18px;
+            }
+            QPushButton#primaryButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #38ffd9, stop:1 #22e6b2);
+                color: #011412;
+            }
+            QPushButton#primaryButton:pressed {
+                background: #00d9ae;
+            }
+            QLineEdit, QComboBox, QSpinBox {
+                background: #090f18;
+                color: #f1f5f9;
+                border: 1px solid #1f2f44;
+                border-radius: 8px;
+                padding: 8px 10px;
+                selection-background-color: #00f5c4;
+                selection-color: #02201d;
+                font-size: 12px;
+            }
+            QLineEdit:hover, QComboBox:hover, QSpinBox:hover {
+                border-color: rgba(100, 160, 240, 0.35);
+            }
+            QLineEdit:focus, QComboBox:focus, QSpinBox:focus {
+                border: 1px solid #00f5c4;
+                background: #0c1420;
+            }
+            QComboBox QAbstractItemView {
+                background: #0f1724;
+                color: #f1f5f9;
+                border: 1px solid #23344a;
+                border-radius: 8px;
+                padding: 4px;
+                selection-background-color: #173248;
+                selection-color: #00f5c4;
+            }
             QListWidget { background:transparent; border:0; outline:0; }
             QScrollArea#toolsScroll, QWidget#toolsViewport, QScrollArea#boardScroll, QWidget#boardViewport,
             QWidget#toolsContent, QWidget#boardHost { background:transparent; border:0; }
             QWidget#scorchedHost, QWidget#scorchedMapColumn, QWidget#scorchedControls,
             QWidget#scorchedViewport, QWidget#scorchedControlsViewport,
-            QScrollArea#battlefieldScroll, QScrollArea#scorchedControlsScroll { background:#121a26; border:0; }
-            QListWidget::item { padding:12px 10px; margin:2px 0; border-radius:9px; color:#abb8ca; }
-            QListWidget::item:selected { background:#1c3438; color:#a2f1df; }
-            QListWidget::item:hover { background:#1a2533; }
-            QListWidget#chatList::item { padding:8px 10px; margin:3px 0; background:#182331; color:#e3edf7; border-radius:8px; }
+            QScrollArea#battlefieldScroll, QScrollArea#scorchedControlsScroll { background:#111a28; border:0; }
+            QListWidget::item { padding:10px 10px; margin:2px 0; border-radius:9px; color:#abb8ca; }
+            QListWidget::item:selected { background:#162c3e; color:#7dd3fc; }
+            QListWidget::item:hover { background:#141f2e; }
+            QListWidget#sessionList::item { padding:0; margin:4px 0; border-radius:11px; border:1px solid transparent; background:rgba(255,255,255,0.02); }
+            QListWidget#sessionList::item:hover { background:rgba(255,255,255,0.045); border:1px solid rgba(100,160,240,0.2); }
+            QListWidget#sessionList::item:selected { background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #142a38,stop:1 #0f202c); border:1px solid rgba(0,245,196,0.38); border-left:3px solid #00f5c4; }
+            QWidget#sessionCardWidget { background:transparent; }
+            QLabel#sessionGlyphIcon { background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #18283a,stop:1 #111d2c); border:1px solid rgba(0,245,196,0.25); border-radius:9px; color:#00f5c4; font-size:16px; font-weight:bold; }
+            QLabel#sessionGameTitle { color:#ffffff; font-size:13px; font-weight:750; }
+            QLabel#sessionPlayersLine { color:#94a3b8; font-size:11px; }
+            QLabel#sessionActivityLine { color:#64748b; font-size:10px; }
+            QLabel#sessionStatusBadge { color:#022c22; background:#2dd4bf; border-radius:5px; padding:2px 7px; font-size:9px; font-weight:800; letter-spacing:0.5px; }
+            QLabel#sessionStatusBadge[kind="waiting"] { color:#451a03; background:#fbbf24; }
+            QLabel#sessionStatusBadge[kind="resync"] { color:#4c0519; background:#fb7185; }
+            QLabel#sessionStatusBadge[kind="neutral"] { color:#cbd5e1; background:#1e293b; }
+            QListWidget#chatList { background:#080d16; border:1px solid #172436; border-radius:12px; outline:none; }
+            QListWidget#chatList::item { padding:4px; margin:2px 0; background:transparent; border:none; color:transparent; }
             QTabWidget#compactTabs::pane { border:0; }
-            QTabWidget#compactTabs QTabBar::tab { background:#202c3c; color:#bfcbdc; padding:9px 12px; min-height:20px; border:1px solid #34445a; }
-            QTabWidget#compactTabs QTabBar::tab:selected { background:#254b47; color:#effff8; border-color:#66d9c2; }
-            QScrollBar:vertical { background:transparent; width:8px; margin:2px; }
-            QScrollBar::handle:vertical { background:#34445a; border-radius:4px; min-height:25px; }
+            QTabWidget#compactTabs QTabBar::tab { background:#141e2c; color:#94a3b8; padding:9px 14px; min-height:22px; border:1px solid #23344a; border-radius:8px; margin:2px; font-weight:600; }
+            QTabWidget#compactTabs QTabBar::tab:selected { background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #043d34,stop:1 #065548); color:#00f5c4; border-color:#00f5c4; font-weight:800; }
+            QSplitter::handle:horizontal { width:5px; background:transparent; }
+            QSplitter::handle:horizontal:hover { background:rgba(0,245,196,0.5); border-radius:2px; }
+            QScrollBar:vertical { background:transparent; width:7px; margin:2px; }
+            QScrollBar::handle:vertical { background:#1e2c3e; border-radius:3px; min-height:25px; }
+            QScrollBar::handle:vertical:hover { background:#00f5c4; }
             QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical { height:0; }
-            QDialog { background:#111a27; }
-            QLabel#dialogTitle { font-size:23px; font-weight:750; color:#f1f4fa; }
-            QLabel#chatLine { background:#182331; border-radius:8px; padding:7px; }
-            QLabel#modeLabel { color:#8796aa; font-size:11px; }
+            QScrollBar:horizontal { background:transparent; height:7px; margin:2px; }
+            QScrollBar::handle:horizontal { background:#1e2c3e; border-radius:3px; min-width:25px; }
+            QScrollBar::handle:horizontal:hover { background:#00f5c4; }
+            QScrollBar::add-line:horizontal,QScrollBar::sub-line:horizontal { height:0; }
+            QDialog { background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #121c2d,stop:1 #0a111c); }
+            QDialog#settingsDialog { background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #121c2d,stop:1 #0a111c); color:#f1f5f9; border:1px solid rgba(100,160,240,0.2); border-radius:18px; }
+            QDialog#settingsDialog QScrollArea#settingsFormScroll,
+            QDialog#settingsDialog QWidget#settingsFormHost,
+            QDialog#settingsDialog QScrollArea#settingsFormScroll QWidget#qt_scrollarea_viewport { background:transparent; border:0; }
+            QDialog#settingsDialog QLabel { background:transparent; color:#e2e8f0; }
+            QDialog#settingsDialog QLabel#muted { color:#94a3b8; }
+            QDialog#settingsDialog QLineEdit, QDialog#settingsDialog QComboBox,
+            QDialog#settingsDialog QSpinBox { min-height:34px; background:#090f18; color:#f1f5f9; border:1px solid #1f2f44; border-radius:7px; padding:6px 9px; selection-background-color:#00f5c4; selection-color:#02201d; }
+            QDialog#settingsDialog QComboBox QAbstractItemView { background:#0f1724; color:#f1f5f9; selection-background-color:#173248; selection-color:#00f5c4; }
+            QDialog#settingsDialog QCheckBox { color:#d7e0ec; spacing:8px; }
+            QDialog#settingsDialog QCheckBox::indicator { width:18px; height:18px; }
+            QLabel#dialogTitle { font-size:23px; font-weight:800; color:#ffffff; letter-spacing:-0.3px; }
+            QLabel#chatLine { background:#131c2a; border-radius:8px; padding:8px 12px; }
+            QLabel#modeLabel { background:rgba(255,255,255,0.03); border:1px solid #1e2c40; border-radius:6px; padding:3px 8px; color:#94a3b8; font-size:10px; font-weight:600; }
         """)
         if self.settings.color_scheme == "daylight":
             self.setStyleSheet(self.styleSheet() + """
                 QWidget#root { background:#eaf0f4; color:#17212d; }
                 QDialog { background:#ffffff; color:#17212d; }
+                QDialog#settingsDialog { background:#f5f8fb; color:#17212d; }
+                QDialog#settingsDialog QScrollArea#settingsFormScroll,
+                QDialog#settingsDialog QWidget#settingsFormHost,
+                QDialog#settingsDialog QScrollArea#settingsFormScroll QWidget#qt_scrollarea_viewport { background:#f5f8fb; border:0; }
+                QDialog#settingsDialog QLabel { color:#243649; }
+                QDialog#settingsDialog QLabel#muted { color:#52677b; }
+                QDialog#settingsDialog QLineEdit, QDialog#settingsDialog QComboBox,
+                QDialog#settingsDialog QSpinBox { background:#ffffff; color:#172431; border-color:#71859a; selection-background-color:#176f63; selection-color:#ffffff; }
+                QDialog#settingsDialog QComboBox QAbstractItemView { background:#ffffff; color:#172431; selection-background-color:#176f63; selection-color:#ffffff; }
+                QDialog#settingsDialog QCheckBox { color:#243649; }
                 QLabel#dialogTitle { color:#1c2936; }
                 QLabel#muted { color:#52677b; }
                 QFrame#card { background:#ffffff; border-color:#c9d4de; }
@@ -739,6 +1164,14 @@ class ArcadeWindow(QMainWindow):
                 QLineEdit,QComboBox,QSpinBox { background:#ffffff; color:#1c2a38; border-color:#c3d0da; }
                 QListWidget::item { color:#33485c; }
                 QListWidget::item:selected { background:#d7eee9; color:#075f57; }
+                QListWidget#sessionList::item:selected { background:#dcefeb; border:1px solid #76a99e; }
+                QLabel#sessionGameTitle { color:#1b2936; }
+                QLabel#sessionPlayersLine { color:#33485c; }
+                QLabel#sessionActivityLine { color:#52677b; }
+                QLabel#sessionStatusBadge { color:#0b5d49; background:#d9f0e6; }
+                QLabel#sessionStatusBadge[kind="waiting"] { color:#805312; background:#faedcc; }
+                QLabel#sessionStatusBadge[kind="resync"] { color:#713d00; background:#ffe6b3; }
+                QLabel#sessionStatusBadge[kind="neutral"] { color:#415268; background:#e5ebf0; }
                 QLabel#chatLine { background:#edf3f6; }
             """)
         elif self.settings.color_scheme == "monochrome":
@@ -793,8 +1226,7 @@ class ArcadeWindow(QMainWindow):
                         self.disconnect_button):
             control.setEnabled(can_transmit)
         self.hosted_checkbox.setEnabled(can_transmit and self.settings.transport == "broadcast")
-        for control in self.cq_widgets:
-            control.setVisible(self.settings.transport == "broadcast" and not self.settings.observer_mode)
+        self._update_cq_visibility()
         for control in (self.cq_choice, self.cq_send, self.cq_answer):
             control.setEnabled(can_transmit and self.settings.transport == "broadcast")
         if self.settings.transport != "broadcast":
@@ -945,6 +1377,12 @@ class ArcadeWindow(QMainWindow):
             self._notify_activity("Game invitation", f"{event.data.get('sender')} · {event.data.get('game')}", event.session)
         elif event.name == "chat_message" and event.data.get("message", {}).get("sender") != self.settings.callsign:
             message = event.data["message"]
+            chat_visible = (self.layout_stack.currentWidget() is self.desktop_splitter or
+                            (self.layout_stack.currentWidget() is self.compact_tabs and
+                             self.compact_tabs.currentWidget() is self.panes[2]))
+            if event.session and (event.session != self.selected_id or not chat_visible):
+                self._unread_by_session[event.session] = self._unread_by_session.get(event.session, 0) + 1
+                self._persist_desktop_state()
             self._notify_activity("New message", f"{message['sender']}: {message['body']}", event.session)
             if self.settings.sound_enabled:
                 QApplication.beep()
@@ -975,7 +1413,7 @@ class ArcadeWindow(QMainWindow):
             self.footer_label.setText(f"Ignored malformed frame · {event.data.get('error','')}")
         elif event.name == "unsupported_game":
             self.footer_label.setText(f"Unsupported game ID {event.data['game_id']} from {event.data['sender']}")
-        if event.name in ("session_updated", "invitation", "delivery", "session_deleted"):
+        if event.name in ("session_updated", "invitation", "delivery", "session_deleted", "chat_message"):
             self._refresh_sessions()
             if event.session and event.session == self.selected_id:
                 self._show_session(event.session)
@@ -987,48 +1425,136 @@ class ArcadeWindow(QMainWindow):
         scroll_position = self.session_list.verticalScrollBar().value()
         self.session_list.blockSignals(True); self.session_list.clear()
         supported = {game.game_id for game in self.engine.catalog() if "desktop" in game.clients}
-        for session in self.engine.sessions():
-            if session["game_id"] not in supported:
-                continue
+        all_sessions = [s for s in self.engine.sessions() if s["game_id"] in supported]
+        query = self.session_search.text().strip().casefold()
+        filter_mode = self.session_filter.currentData()
+        if not self._table_list_initialized:
+            self.new_game_toggle.setChecked(not bool(all_sessions))
+            self._toggle_new_game_setup(self.new_game_toggle.isChecked())
+            self._table_list_initialized = True
+        sessions = []
+        for session in all_sessions:
+            pending = session.get("sync_requested_at", 0) > session.get("sync_at", 0)
+            needs_sync = pending or any(word in (session.get("error") or "").lower() for word in ("missed moves", "state conflict", "awaiting snapshot"))
+            practice_turn = self.settings.transport == "practice" and session["status"] == "active"
+            own_turn = practice_turn or session.get("current_player") == self.settings.callsign
+            last = session.get("last_move") or {}
+            other = next((p for p in session["players"] if p != self.settings.callsign), session["coordinator"])
+            searchable = " ".join((session["game"], other, session["id"], session["status"],
+                                   last.get("actor", ""), last.get("description", ""))).casefold()
+            if query and query not in searchable: continue
+            if filter_mode == "your-turn" and not (session["status"] == "active" and own_turn): continue
+            if filter_mode == "waiting" and not (session["status"] == "active" and not own_turn and not needs_sync and not session["pending_action"]): continue
+            if filter_mode == "resync" and not needs_sync: continue
+            if filter_mode == "unread" and not self._unread_by_session.get(session["id"], 0): continue
+            sessions.append(session)
+        def priority(s):
+            pending = s.get("sync_requested_at", 0) > s.get("sync_at", 0)
+            if s["status"] == "invited": return 0
+            if pending: return 1
+            if s["status"] == "active" and (self.settings.transport == "practice" or s.get("current_player") == self.settings.callsign): return 2
+            if s["status"] == "active": return 3
+            return 4
+        sessions.sort(key=lambda s: (priority(s), -s.get("updated", 0)))
+        for session in sessions:
             opponent = (" / ".join(session["players"]) or session["coordinator"]) if self.settings.observer_mode else next((p for p in session["players"] if p != self.settings.callsign), "Open lobby")
-            turn = "your move" if session.get("current_player") == self.settings.callsign else session["status"]
-            item = QListWidgetItem(f"{session['game']}\n{opponent}  ·  {turn}  ·  {session['id'][-6:]}")
+            pending = session.get("sync_requested_at", 0) > session.get("sync_at", 0)
+            needs_sync = pending or any(word in (session.get("error") or "").lower() for word in ("missed moves", "state conflict", "awaiting snapshot"))
+            own_turn = session["status"] == "active" and not self.settings.observer_mode and (self.settings.transport == "practice" or session.get("current_player") == self.settings.callsign)
+            turn = "resync requested" if pending else "needs resync" if needs_sync else "your move" if own_turn else "waiting" if session["status"] == "active" else session["status"]
+            last = session.get("last_move")
+            activity = f"Last: {last['actor']} {last['description']}" if last else "No moves yet"
+            unread = self._unread_by_session.get(session["id"], 0)
+            status_kind = "resync" if needs_sync else "active" if own_turn else "waiting" if session["status"] == "active" or session["status"] in ("invited", "joining") else "neutral"
+            activity_text = f"Last move · {last['actor']} {last['description']}" if last else "No moves yet"
+            item = QListWidgetItem()
+            card = SessionListCard(session["game"], turn, opponent, len(session["players"]),
+                                   activity_text, unread, status_kind)
+            item.setSizeHint(card.sizeHint())
+            item.setData(Qt.ItemDataRole.AccessibleTextRole,
+                         f"{session['game']}. {opponent}. {turn}. {activity_text}. {unread} unread messages.")
+            item.setToolTip(card.toolTip())
             item.setData(Qt.ItemDataRole.UserRole, session["id"])
             self.session_list.addItem(item)
+            self.session_list.setItemWidget(item, card)
             if session["id"] == selected:
                 self.session_list.setCurrentItem(item)
         self.session_list.blockSignals(False)
+        if not sessions:
+            self.session_list.addItem(QListWidgetItem("No tables match this search or filter." if all_sessions else "No tables yet. Start a game or accept an invitation."))
         self.delete_button.setEnabled(bool(self.engine and self.engine.sessions()))
-        if self.session_list.currentItem():
-            self.selected_id = self.session_list.currentItem().data(Qt.ItemDataRole.UserRole)
-        elif self.session_list.count() and not self._preserve_empty_selection:
+        current_item = self.session_list.currentItem()
+        current_id = current_item.data(Qt.ItemDataRole.UserRole) if current_item else None
+        if current_id:
+            self.selected_id = current_id
+        elif selected and any(session["id"] == selected for session in all_sessions):
+            self.selected_id = selected
+        elif sessions and not self._preserve_empty_selection:
             self.session_list.blockSignals(True)
-            self.session_list.setCurrentRow(0)
+            first = next((index for index in range(self.session_list.count())
+                          if self.session_list.item(index).data(Qt.ItemDataRole.UserRole)), -1)
+            if first >= 0: self.session_list.setCurrentRow(first)
             self.session_list.blockSignals(False)
-            self.selected_id = self.session_list.currentItem().data(Qt.ItemDataRole.UserRole)
+            current_item = self.session_list.currentItem()
+            self.selected_id = current_item.data(Qt.ItemDataRole.UserRole) if current_item else None
         else:
             self.selected_id = None
+        self._persist_desktop_state()
         self.session_list.verticalScrollBar().setValue(scroll_position)
         self.session_list.setVisible(self.layout_stack.currentWidget() is not self.compact_tabs or
                                      self.session_list.count() > 0)
         self._show_session(self.selected_id)
 
     def _select_item(self, current, _previous):
+        if current and not current.data(Qt.ItemDataRole.UserRole):
+            return
         if current:
             self._preserve_empty_selection = False
         self.selected_id = current.data(Qt.ItemDataRole.UserRole) if current else None
+        if self.selected_id:
+            self._unread_by_session.pop(self.selected_id, None)
+        self._persist_desktop_state()
+        self._refresh_sessions()
         self._show_session(self.selected_id)
         if current and self.layout_stack.currentWidget() is self.compact_tabs:
             self.compact_tabs.setCurrentIndex(1)
+
+    def _toggle_new_game_setup(self, expanded: bool):
+        self.tools_scroll.setVisible(expanded)
+        self.new_game_toggle.setText("−  Hide game setup" if expanded else "＋  Start a new game")
+
+    def _toggle_cq_panel(self, expanded: bool):
+        available = self.settings.transport == "broadcast" and not self.settings.observer_mode
+        self.cq_scroll.setVisible(expanded and available)
+        self.cq_toggle.setText("−  Hide game calls" if expanded else "⌁  Find a game · Call CQ")
+
+    def _update_cq_visibility(self):
+        available = self.settings.transport == "broadcast" and not self.settings.observer_mode
+        self.cq_toggle.setVisible(available)
+        self.cq_scroll.setVisible(available and self.cq_toggle.isChecked())
+
+    def _persist_desktop_state(self):
+        self._ui_settings.setValue(f"selectedTable/{self.settings.callsign}", self.selected_id or "")
+        self._ui_settings.setValue(f"unreadTables/{self.settings.callsign}", self._unread_by_session)
+
+    def _on_compact_tab_changed(self, index: int):
+        self._size_chat_rows()
+        if self.layout_stack.currentWidget() is self.compact_tabs and self.compact_tabs.widget(index) is self.panes[2] and self.selected_id:
+            self._unread_by_session.pop(self.selected_id, None)
+            self._persist_desktop_state()
+            self._refresh_sessions()
 
     def _show_session(self, sid: str | None):
         session = None
         if self.engine and sid:
             try: session = self.engine.session(sid)
             except KeyError: return
+            pending_sync = session.get("sync_requested_at", 0) > session.get("sync_at", 0)
+            needs_sync = pending_sync or any(word in (session.get("error") or "").lower() for word in ("missed moves", "state conflict", "awaiting snapshot"))
+            session["resync_pending"] = needs_sync
             signature = (sid, session["status"], session["revision"], session["sequence"],
                          session["pending_action"], tuple(session["players"]), tuple(session["invited"]),
-                         repr(session["view"]), repr(session.get("last_move")), session.get("error"), self.settings.transport, self.settings.tx_enabled)
+                         repr(session["view"]), repr(session.get("last_move")), session.get("error"), pending_sync, self.settings.transport, self.settings.tx_enabled)
             if signature == self._board_signature:
                 return
             self._board_signature = signature
@@ -1065,7 +1591,12 @@ class ArcadeWindow(QMainWindow):
             self.delete_button.setEnabled(False)
             self.game_heading.setText("Welcome to the airwaves")
             self.game_subtitle.setText("Start a game or accept an invitation to take a seat.")
-            self.turn_badge.setText("NO GAME SELECTED"); self.players_label.setText("Stations appear here when a lobby opens.")
+            self.turn_badge.setText("NO GAME SELECTED")
+            self.turn_badge.setProperty("turn", "neutral")
+            self.turn_badge.style().unpolish(self.turn_badge)
+            self.turn_badge.style().polish(self.turn_badge)
+            self.players_label.setText("Stations appear here when a lobby opens.")
+            self.board_layout.addWidget(HeroWelcomeWidget(parent=self.board_host))
             return
         game = session["game"]; players = session["players"]
         can_transmit = not self.settings.observer_mode and (self.settings.transport == "practice" or self.settings.tx_enabled)
@@ -1086,16 +1617,20 @@ class ArcadeWindow(QMainWindow):
         self.game_subtitle.setText(f"Game {sid}  ·  revision {session['revision']}  ·  {session['status'].title()}{suffix}")
         state = session["view"]
         current = session["current_player"]
-        self.sync_button.setVisible(self.settings.observer_mode or (session["coordinator"] != self.settings.callsign and session["status"] in ("active", "finished")))
+        self.sync_button.setVisible(self.settings.observer_mode or session["status"] in ("active", "finished"))
         self.retry_button.setVisible(not self.settings.observer_mode and session.get("hosted", False) and session["pending_action"] is not None)
-        if self.settings.observer_mode:
-            self.sync_button.setText("↻  Request snapshot (TRANSMITS)")
+        self.sync_button.setText(self._sync_label_for_session(session))
+        self.sync_button.setToolTip("Resynchronization is always available. Your moves are held until the latest table state arrives." if needs_sync else "Request or send the latest shared table state.")
+        self.sync_button.setEnabled((self.settings.transport == "practice" or self.settings.tx_enabled) and not pending_sync)
+        turn_kind = "neutral"
         if self.settings.observer_mode:
             self.turn_badge.setText("OBSERVING · RX ONLY" if state else "OBSERVING · AWAITING SNAPSHOT")
         elif session["status"] == "invited":
             self.turn_badge.setText("INVITATION RECEIVED")
             self.accept_button.setVisible(True)
+            turn_kind = "waiting"
         elif session["status"] == "lobby":
+            turn_kind = "waiting"
             if session.get("hosted"):
                 owner = session["coordinator"] == self.settings.callsign
                 self.turn_badge.setText("DEALER · WAITING FOR JOIN REQUESTS" if owner else "HOSTED TABLE · JOIN TO PLAY")
@@ -1112,19 +1647,41 @@ class ArcadeWindow(QMainWindow):
         elif session["status"] == "joining":
             self.turn_badge.setText("JOIN REQUEST SENT · WAIT FOR DEALER" if session.get("hosted") else "WAITING FOR THE HOST TO START")
             self.join_button.setVisible(bool(session.get("hosted")))
+            turn_kind = "waiting"
         elif session["status"] == "cancelled":
             self.turn_badge.setText("INVITATION CANCELLED")
+            turn_kind = "alert"
         elif session["status"] == "finished":
             winner = state.get("winner") if state else None
             self.turn_badge.setText(f"{session['forfeited_by']} FORFEITED" if session.get("forfeited_by") else f"{winner} WINS" if winner else "GAME OVER · DRAW")
+            turn_kind = "finished"
+        elif needs_sync:
+            self.turn_badge.setText("RESYNC REQUESTED · WAITING FOR TABLE" if pending_sync else "TABLE MAY BE OUT OF DATE · RESYNC BEFORE MOVING")
+            turn_kind = "alert"
         elif session["pending_action"]:
             self.turn_badge.setText("MOVE SENT · WAITING FOR COMMIT")
+            turn_kind = "waiting"
         else:
-            self.turn_badge.setText(f"LOCAL PRACTICE · {current}'s turn" if self.settings.transport == "practice" else f"YOUR TURN · {players.index(current)+1} of {len(players)}" if current == self.settings.callsign
-                                    else f"{current or 'Game'} is thinking")
+            is_my_turn = self.settings.transport == "practice" or current == self.settings.callsign
+            self.turn_badge.setText(f"LOCAL PRACTICE · {current}'s turn" if self.settings.transport == "practice" else f"YOUR TURN · {players.index(current)+1} of {len(players)}" if is_my_turn else f"{current or 'Game'} is thinking")
+            turn_kind = "mine" if is_my_turn else "waiting"
         if session.get("error"):
             self.turn_badge.setText(f"MOVE REJECTED · {session['error']}")
-        self.players_label.setText("\n".join([*( ("● " if p == current else "○ ") + p for p in players), *("◌ " + p + " · invited" for p in session["invited"])]) or "No stations yet")
+            turn_kind = "alert"
+        self.turn_badge.setProperty("turn", turn_kind)
+        self.turn_badge.style().unpolish(self.turn_badge)
+        self.turn_badge.style().polish(self.turn_badge)
+        player_lines = []
+        for p in players:
+            active = p == current and session["status"] == "active"
+            bullet = "● " if active else "○ "
+            role = "  ·  HOST" if p == session["coordinator"] else ""
+            my_tag = "  (YOU)" if p == self.settings.callsign else ""
+            signal = "  ▂▃▄▅" if p == self.settings.callsign else "  ▂▃▄"
+            player_lines.append(f"{bullet}{p:<7}{signal}{role}{my_tag}")
+        for p in session["invited"]:
+            player_lines.append(f"◌ {p:<7}  ·  invited")
+        self.players_label.setText("\n".join(player_lines) if player_lines else "No stations yet")
         if state:
             self._render_state(session)
         self._refresh_chat(sid)
@@ -1137,6 +1694,34 @@ class ArcadeWindow(QMainWindow):
                 self._completion_timer.start(1100)
             else:
                 self._view_result()
+
+    def _sync_label_for_session(self, session: dict) -> str:
+        requested = float(session.get("sync_requested_at", 0))
+        pending = requested > float(session.get("sync_at", 0))
+        timed_out = pending and time.time() - requested >= 30
+        if self.width() < 520:
+            if pending: return "↻  Retry" if timed_out else "↻  Waiting"
+            if session["coordinator"] == self.settings.callsign: return "↻  Send state"
+            return "↻  Resync"
+        if pending:
+            return "↻  Resend resync request" if timed_out else "↻  Resync requested · waiting for table"
+        if self.settings.observer_mode: return "↻  Resync table (TRANSMITS)"
+        if session["coordinator"] == self.settings.callsign: return "↻  Send latest state to table"
+        return "↻  Resync table"
+
+    def _refresh_sync_retry(self):
+        if not self.engine or not self.selected_id or not self.sync_button.isVisible():
+            return
+        try:
+            session = self.engine.session(self.selected_id)
+        except KeyError:
+            return
+        requested = float(session.get("sync_requested_at", 0))
+        pending = requested > float(session.get("sync_at", 0))
+        if pending:
+            can_retry = time.time() - requested >= 30
+            self.sync_button.setText(self._sync_label_for_session(session))
+            self.sync_button.setEnabled(can_retry and (self.settings.transport == "practice" or self.settings.tx_enabled))
 
     def _finish_scorched_result(self):
         if self.isVisible() and self.selected_id == self._pending_result_id:
@@ -1171,14 +1756,44 @@ class ArcadeWindow(QMainWindow):
         if view["kind"] == "scorched-earth":
             self._render_scorched(session, view)
         elif view["kind"] == "grid":
-            board = QWidget(); grid = QGridLayout(board); grid.setSpacing(10)
-            my_turn = not self.settings.observer_mode and (self.settings.transport == "practice" or session["current_player"] == self.settings.callsign) and session["status"] == "active" and not session["pending_action"] and (self.settings.transport == "practice" or self.settings.tx_enabled)
+            board = QWidget(); grid = QGridLayout(board); grid.setSpacing(12)
+            grid.setContentsMargins(18, 18, 18, 18)
+            board.setStyleSheet("""
+                QWidget {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #121c2c, stop:1 #0a111b);
+                    border: 1px solid rgba(100, 160, 240, 0.16);
+                    border-radius: 20px;
+                }
+            """)
+            my_turn = not self.settings.observer_mode and (self.settings.transport == "practice" or session["current_player"] == self.settings.callsign) and session["status"] == "active" and not session["pending_action"] and not session.get("resync_pending") and (self.settings.transport == "practice" or self.settings.tx_enabled)
             for cell, value in enumerate(view["cells"]):
-                text = value if value.strip() else str(cell + 1)
+                val = value.strip()
+                text = "✕" if val == "X" else "○" if val == "O" else str(cell + 1)
                 button = QPushButton(text); button.setObjectName(f"boardCell{cell}")
-                button.setFixedSize(112, 106); button.setEnabled(my_turn and not value.strip())
-                button.setStyleSheet("font-size:34px;font-weight:800;color:#eeeeee" if self.settings.color_scheme == "monochrome" else "font-size:34px;font-weight:800;color:#79e4cb" if value == "X" else
-                                     "font-size:34px;font-weight:800;color:#f0b56b" if value == "O" else "font-size:23px;color:#a5b6c9")
+                button.setFixedSize(116, 110); button.setEnabled(my_turn and not val)
+                if self.settings.color_scheme == "monochrome":
+                    btn_style = "font-size:36px;font-weight:800;color:#ffffff;background:#222;border:2px solid #555;border-radius:14px;"
+                elif val == "X":
+                    btn_style = ("QPushButton { font-size:54px;font-weight:900;color:#00f5c4;"
+                                 "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #122838,stop:1 #081724);"
+                                 "border:2px solid #00f5c4;border-radius:16px; }")
+                elif val == "O":
+                    btn_style = ("QPushButton { font-size:54px;font-weight:900;color:#ff9f43;"
+                                 "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #2a1f14,stop:1 #160f08);"
+                                 "border:2px solid #ff9f43;border-radius:16px; }")
+                else:
+                    btn_style = ("""
+                        QPushButton {
+                            font-size: 20px; font-weight: 700; color: #5a7495;
+                            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #152236, stop:1 #0c1522);
+                            border: 1px solid rgba(100, 160, 240, 0.22); border-radius: 16px;
+                        }
+                        QPushButton:hover {
+                            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1e334e, stop:1 #122236);
+                            border: 2px solid #00f5c4; color: #00f5c4;
+                        }
+                    """)
+                button.setStyleSheet(btn_style)
                 button.clicked.connect(lambda _checked=False, i=cell: self._submit_action(bytes((i,))))
                 grid.addWidget(button, cell // 3, cell % 3)
             self.board_layout.addWidget(board)
@@ -1190,7 +1805,7 @@ class ArcadeWindow(QMainWindow):
             hint = QLabel("Select your stone, then a highlighted hex. Solid = clone · dotted = jump.")
             hint.setWordWrap(True); box.addWidget(hint)
             board = QWidget(); board.setFixedSize(350, 310)
-            enabled = (not self.settings.observer_mode and session["status"] == "active" and not session["pending_action"]
+            enabled = (not self.settings.observer_mode and session["status"] == "active" and not session["pending_action"] and not session.get("resync_pending")
                        and (self.settings.transport == "practice" or (self.settings.tx_enabled and session["current_player"] == self.settings.callsign)))
             buttons, selected = {}, [None]
             legal = set(map(tuple, view["legal_moves"]))
@@ -1225,31 +1840,68 @@ class ArcadeWindow(QMainWindow):
                 HexLightning(board, prior[1], view["cells"])
             self.board_layout.addWidget(host)
         elif view["kind"] == "connect-four":
-            host = QWidget(); box = QVBoxLayout(host)
-            board = QWidget(); grid = QGridLayout(board); grid.setSpacing(4)
-            grid.setContentsMargins(0, 0, 0, 0)
-            enabled = not self.settings.observer_mode and (self.settings.transport == "practice" or session["current_player"] == self.settings.callsign) and session["status"] == "active" and not session["pending_action"] and (self.settings.transport == "practice" or self.settings.tx_enabled)
+            host = QWidget(); box = QVBoxLayout(host); box.setSpacing(12)
+            board = QWidget(); grid = QGridLayout(board); grid.setSpacing(6)
+            grid.setContentsMargins(18, 16, 18, 16)
+            board.setStyleSheet("""
+                QWidget {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #101c2e, stop:1 #080f1a);
+                    border: 2px solid #1e334a;
+                    border-radius: 18px;
+                }
+            """)
+            enabled = not self.settings.observer_mode and (self.settings.transport == "practice" or session["current_player"] == self.settings.callsign) and session["status"] == "active" and not session["pending_action"] and not session.get("resync_pending") and (self.settings.transport == "practice" or self.settings.tx_enabled)
             for col in range(7):
-                choose = QPushButton(f"▼ {col+1}"); choose.setFixedSize(54, 40)
+                choose = QPushButton(f"▼ {col+1}"); choose.setFixedSize(54, 42)
                 choose.setEnabled(enabled and view["cells"][col] == " ")
+                choose.setStyleSheet("""
+                    QPushButton {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #17273c, stop:1 #0f1c2d);
+                        color: #00f5c4;
+                        border: 1px solid rgba(0, 245, 196, 0.3);
+                        border-radius: 8px;
+                        font-weight: 800;
+                        font-size: 12px;
+                    }
+                    QPushButton:hover {
+                        background: #00f5c4;
+                        color: #02201d;
+                        border-color: #00f5c4;
+                    }
+                    QPushButton:disabled {
+                        background: #0d1520;
+                        color: #334458;
+                        border-color: #162230;
+                    }
+                """)
                 choose.clicked.connect(lambda _checked=False, c=col: self._submit_action(bytes((c,))))
                 grid.addWidget(choose, 0, col)
             for row in range(6):
                 for col in range(7):
                     mark = view["cells"][row * 7 + col]
-                    disc = QLabel("●" if mark != " " else "○")
+                    disc = QLabel()
                     disc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                    color = "#eeeeee" if self.settings.color_scheme == "monochrome" else "#71e5d3" if mark == "X" else "#f4bd76" if mark == "O" else "#52697e"
-                    disc.setStyleSheet(f"background:#1a3548;color:{color};font-size:34px;border-radius:6px")
                     disc.setFixedSize(54, 52)
+                    if self.settings.color_scheme == "monochrome":
+                        disc_style = f"background:{'#fff' if mark == 'X' else '#555' if mark == 'O' else '#111'};border-radius:26px;border:2px solid #777;"
+                    elif mark == "X":
+                        disc_style = "background: qradialgradient(cx:0.35, cy:0.35, radius:0.7, fx:0.3, fy:0.3, stop:0 #a7f3d0, stop:0.5 #10b981, stop:1 #047857); border-radius: 26px; border: 1px solid #34d399;"
+                    elif mark == "O":
+                        disc_style = "background: qradialgradient(cx:0.35, cy:0.35, radius:0.7, fx:0.3, fy:0.3, stop:0 #fef08a, stop:0.5 #f59e0b, stop:1 #b45309); border-radius: 26px; border: 1px solid #fbbf24;"
+                    else:
+                        disc_style = "background: #070d16; border: 2px solid #142132; border-radius: 26px;"
+                    disc.setStyleSheet(disc_style)
                     grid.addWidget(disc, row + 1, col)
             box.addWidget(board)
-            box.addWidget(QLabel("Select a column to drop a disc. Four in a row wins."))
+            tip = QLabel("Select a column to drop a disc. Four in a row wins.")
+            tip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            tip.setObjectName("muted")
+            box.addWidget(tip)
             self.board_layout.addWidget(host)
         elif view["kind"] == "battleship":
             from .games.battleship import FLEET
             host = QWidget(); box = QVBoxLayout(host)
-            active = not self.settings.observer_mode and session["status"] == "active" and not session["pending_action"] and (self.settings.transport == "practice" or (self.settings.tx_enabled and session["current_player"] == self.settings.callsign))
+            active = not self.settings.observer_mode and session["status"] == "active" and not session["pending_action"] and not session.get("resync_pending") and (self.settings.transport == "practice" or (self.settings.tx_enabled and session["current_player"] == self.settings.callsign))
             box.addWidget(QLabel(f"{session['current_player']} · {view['phase']}"))
             if view["phase"] == "setup" and not session.get("private_fleet"):
                 draft = self._battleship_drafts.setdefault(session["id"], [])
@@ -1293,7 +1945,7 @@ class ArcadeWindow(QMainWindow):
             box.addWidget(title)
             box.addWidget(QLabel(f"Interference pulse: {view['pulse_damage']} per station · in {view['rounds_until_pulse']} round(s) · Jam {view['jam']}"))
             actor_call = session["current_player"] if self.settings.transport == "practice" else self.settings.callsign
-            active = not self.settings.observer_mode and session["status"] == "active" and not session["pending_action"] and (self.settings.transport == "practice" or (self.settings.tx_enabled and actor_call == session["current_player"]))
+            active = not self.settings.observer_mode and session["status"] == "active" and not session["pending_action"] and not session.get("resync_pending") and (self.settings.transport == "practice" or (self.settings.tx_enabled and actor_call == session["current_player"]))
             for station in view["stations"]:
                 is_mine = not self.settings.observer_mode and station["callsign"] == actor_call
                 description = (f"{station['callsign']}    ♥ {station['hp']}/18     ◈ {station['shield']} shield     ✦ {station['focus']} focus     "
@@ -1352,7 +2004,7 @@ class ArcadeWindow(QMainWindow):
             pile.currentIndexChanged.connect(update_amount)
             update_amount(first)
             take = QPushButton("Take items"); take.setObjectName("primaryButton")
-            take.setEnabled(not self.settings.observer_mode and (self.settings.transport == "practice" or self.settings.tx_enabled) and (self.settings.transport == "practice" or session["current_player"] == self.settings.callsign) and session["status"] == "active" and not session["pending_action"])
+            take.setEnabled(not self.settings.observer_mode and (self.settings.transport == "practice" or self.settings.tx_enabled) and (self.settings.transport == "practice" or session["current_player"] == self.settings.callsign) and session["status"] == "active" and not session["pending_action"] and not session.get("resync_pending"))
             take.clicked.connect(lambda: self._submit_action(bytes((pile.currentIndex(), amount.value()))))
             controls.addWidget(pile); controls.addWidget(amount); controls.addWidget(take); box.addLayout(controls)
             self.board_layout.addWidget(host)
@@ -1383,7 +2035,7 @@ class ArcadeWindow(QMainWindow):
             box.addWidget(grid_host, alignment=Qt.AlignmentFlag.AlignHCenter)
             for player, rack in view["racks"].items():
                 box.addWidget(QLabel(f"{player} RACK  " + "  ".join(rack)))
-            enabled = not self.settings.observer_mode and (self.settings.transport == "practice" or self.settings.tx_enabled) and (self.settings.transport == "practice" or current == self.settings.callsign) and session["status"] == "active" and not session["pending_action"]
+            enabled = not self.settings.observer_mode and (self.settings.transport == "practice" or self.settings.tx_enabled) and (self.settings.transport == "practice" or current == self.settings.callsign) and session["status"] == "active" and not session["pending_action"] and not session.get("resync_pending")
             form = QHBoxLayout(); start = QLineEdit(); start.setObjectName("wordStart"); start.setPlaceholderText("H8")
             direction = QComboBox(); direction.setObjectName("wordDirection"); direction.addItem("Across", "H"); direction.addItem("Down", "V")
             word = QLineEdit(); word.setObjectName("wordText"); word.setPlaceholderText("Word · use {A} for a blank tile")
@@ -1405,14 +2057,14 @@ class ArcadeWindow(QMainWindow):
             box.addWidget(QLabel("Plugin action · hexadecimal bytes"))
             raw = QLineEdit(); raw.setPlaceholderText("e.g. 0102")
             send = QPushButton("Submit action"); send.setObjectName("primaryButton")
-            send.setEnabled(not self.settings.observer_mode and (self.settings.transport == "practice" or self.settings.tx_enabled) and (self.settings.transport == "practice" or session["current_player"] == self.settings.callsign) and session["status"] == "active")
+            send.setEnabled(not self.settings.observer_mode and (self.settings.transport == "practice" or self.settings.tx_enabled) and (self.settings.transport == "practice" or session["current_player"] == self.settings.callsign) and session["status"] == "active" and not session.get("resync_pending"))
             send.clicked.connect(lambda: self._submit_hex_action(raw.text()))
             box.addWidget(raw); box.addWidget(send); self.board_layout.addWidget(panel)
 
     def _render_sea_warfare(self, session: dict, view: dict):
         host = QWidget(); box = QVBoxLayout(host); box.setSpacing(7)
         active = (not self.settings.observer_mode and session["status"] == "active"
-                  and not session["pending_action"]
+                  and not session["pending_action"] and not session.get("resync_pending")
                   and (self.settings.transport == "practice" or
                        (self.settings.tx_enabled and session["current_player"] == self.settings.callsign)))
         rules = QLabel("Carrier fighter: one 50% block roll · Battleship: one adjacent double shot · "
@@ -1639,7 +2291,7 @@ class ArcadeWindow(QMainWindow):
         wind = view["wind"]
         box.addWidget(QLabel(f"Wind {wind['direction']} {wind['label']}"))
         can_play = (not self.settings.observer_mode and session["status"] == "active"
-                    and not session["pending_action"] and
+                    and not session["pending_action"] and not session.get("resync_pending") and
                     (self.settings.transport == "practice" or
                      (self.settings.tx_enabled and session["current_player"] == self.settings.callsign)))
         actor = session["current_player"] if self.settings.transport == "practice" else self.settings.callsign
@@ -1760,7 +2412,10 @@ class ArcadeWindow(QMainWindow):
             bubble = QLabel(f"{message['sender']} · {message['delivery']}\n{message['body']}")
             bubble.setTextFormat(Qt.TextFormat.PlainText); bubble.setWordWrap(True)
             bubble.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            bubble.setStyleSheet("padding:10px; border-radius:14px; color:#eef7ff; background:" + ("#425391;" if mine else "#254b47;"))
+            if mine:
+                bubble.setStyleSheet("padding:10px 14px; border-radius:14px; color:#ffffff; background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0f766e, stop:1 #042f2e); border: 1px solid #14b8a6; font-size:12px;")
+            else:
+                bubble.setStyleSheet("padding:10px 14px; border-radius:14px; color:#f1f5f9; background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #1e293b, stop:1 #0f172a); border: 1px solid #334155; font-size:12px;")
             natural_width = max(bubble.fontMetrics().horizontalAdvance(line) for line in bubble.text().splitlines()) + 24
             bubble.setProperty("natural_width", natural_width)
             if mine: row_layout.addStretch(1)
@@ -1888,6 +2543,10 @@ class ArcadeWindow(QMainWindow):
 
     def _submit_action(self, action: bytes):
         if self.engine and self.selected_id:
+            session = self.engine.session(self.selected_id)
+            if session.get("sync_requested_at", 0) > session.get("sync_at", 0) or any(word in (session.get("error") or "").lower() for word in ("missed moves", "state conflict", "awaiting snapshot")):
+                self.footer_label.setText("Resync this table before sending your move.")
+                return
             sid = self.selected_id; self._run(partial(self.engine.legal_action, sid, action))
 
     def _submit_hex_action(self, text: str):
@@ -1951,6 +2610,7 @@ class ArcadeWindow(QMainWindow):
             if self.settings.transport != "broadcast":
                 self.hosted_checkbox.setChecked(False)
             self._update_new_game_mode()
+            self._update_cq_visibility()
             self._populate_games()
             self._apply_style()
             self.connect_service()

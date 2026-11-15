@@ -9,21 +9,61 @@ class Scoreboard(QFrame):
         super().__init__(parent)
         self.setObjectName("matchScoreboard")
         self.setStyleSheet("""
-            QFrame#matchScoreboard { background:#080e17; border:2px solid #3b5267; border-radius:12px; }
-            QLabel { background:transparent; border:0; color:#aebed0; }
-            QLabel#scoreDigits { color:#afffe0; font-family:monospace; font-size:30px; font-weight:800; }
-            QLabel#scoreStation { color:#e8edf6; font-weight:700; font-size:12px; }
+            QFrame#matchScoreboard {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #111a28, stop:1 #0a111b);
+                border: 1px solid rgba(100, 160, 240, 0.18);
+                border-radius: 14px;
+                padding: 10px 14px;
+            }
+            QLabel { background: transparent; border: 0; color: #94a3b8; }
+            QLabel#scoreHeader {
+                color: #00f5c4;
+                font-size: 10px;
+                font-weight: 800;
+                letter-spacing: 2px;
+            }
+            QLabel#scoreDigits {
+                color: #afffe0;
+                font-family: 'Space Grotesk', 'Inter', monospace;
+                font-size: 32px;
+                font-weight: 800;
+            }
+            QLabel#scoreStation {
+                color: #f8fafc;
+                font-weight: 700;
+                font-size: 13px;
+                letter-spacing: 0.3px;
+            }
+            QLabel#scoreUnit {
+                color: #64748b;
+                font-size: 10px;
+                font-weight: 600;
+                letter-spacing: 0.5px;
+            }
         """)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
         data = scoreboard(session)
-        label = QLabel(f"SCOREBOARD  /  {data['label']}"); label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label = QLabel(f"SCOREBOARD  /  {data['label'].upper()}")
+        label.setObjectName("scoreHeader")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(label)
-        row = QHBoxLayout(); layout.addLayout(row)
+        row = QHBoxLayout()
+        row.setSpacing(16)
+        layout.addLayout(row)
         for entry in data['entries']:
             seat = QVBoxLayout()
+            seat.setSpacing(3)
             name = QLabel(entry['player']); name.setObjectName('scoreStation')
             value = QLabel(entry['value']); value.setObjectName('scoreDigits')
-            status = QLabel(entry['unit'] + (' · WINNER' if entry['winner'] else ' · TURN' if entry['active'] else ''))
+            unit_text = entry['unit'] + (' · WINNER' if entry['winner'] else ' · TURN' if entry['active'] else '')
+            status = QLabel(unit_text)
+            status.setObjectName('scoreUnit')
+            if entry['winner']:
+                status.setStyleSheet("color: #fbbf24; font-weight: 800;")
+            elif entry['active']:
+                status.setStyleSheet("color: #00f5c4; font-weight: 700;")
             for widget in (name, value, status):
                 widget.setAlignment(Qt.AlignmentFlag.AlignCenter); seat.addWidget(widget)
             row.addLayout(seat, 1)
@@ -32,21 +72,39 @@ class Scoreboard(QFrame):
 class ResultDialog(QDialog):
     def __init__(self, session, settings, parent):
         super().__init__(parent)
-        self.setWindowTitle('Match complete')
+        self.setWindowTitle('Match complete · Radio Arcade')
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setMinimumWidth(300)
+        self.setMinimumWidth(340)
+        self.setStyleSheet("""
+            QDialog {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #121c2d, stop:1 #0a111c);
+                border: 1px solid rgba(100, 160, 240, 0.24);
+                border-radius: 18px;
+            }
+            QLabel { color: #e2e8f0; }
+            QLabel#resultSubtitle { color: #94a3b8; font-size: 13px; font-weight: 500; }
+        """)
         if parent:
-            self.resize(max(300, min(430, parent.width() - 16)), 320)
-        layout = QVBoxLayout(self); layout.setContentsMargins(28, 24, 28, 24); layout.setSpacing(18)
-        title = QLabel(result_title(session, settings.callsign, practice=settings.transport == 'practice', observer=settings.observer_mode))
+            self.resize(max(340, min(450, parent.width() - 16)), 340)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(32, 28, 32, 28)
+        layout.setSpacing(16)
+        outcome = result_title(session, settings.callsign, practice=settings.transport == 'practice', observer=settings.observer_mode)
+        title = QLabel(outcome)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        accent = '#f18383' if title.text() == 'DEFEAT' else '#f3bf7a' if title.text() == 'DRAW' else '#8fe2c2'
-        title.setStyleSheet(f'font-size:32px; font-weight:800; color:{accent};')
+        accent = '#f87171' if outcome == 'DEFEAT' else '#fbbf24' if outcome == 'DRAW' else '#00f5c4'
+        title.setStyleSheet(f'font-size:36px; font-weight:900; color:{accent}; letter-spacing:1px;')
         layout.addWidget(title)
-        subtitle = QLabel(f"{session['game']} · Match complete"); subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(subtitle); layout.addWidget(Scoreboard(session))
-        close = QPushButton('Back to board'); close.setObjectName('primaryButton'); close.clicked.connect(self.accept)
+        subtitle = QLabel(f"{session['game']} · Match complete")
+        subtitle.setObjectName("resultSubtitle")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(subtitle)
+        layout.addWidget(Scoreboard(session))
+        close = QPushButton('Return to Table')
+        close.setObjectName('primaryButton')
+        close.setMinimumHeight(40)
+        close.clicked.connect(self.accept)
         layout.addWidget(close)
         effect = QGraphicsOpacityEffect(title); title.setGraphicsEffect(effect)
         self.animation = QPropertyAnimation(effect, b'opacity', self)

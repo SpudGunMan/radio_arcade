@@ -1,7 +1,26 @@
 "use strict";
 
 const $ = (selector, root = document) => root.querySelector(selector);
-const state = { snapshot: null, selectedId: null, session: null, listSignature: "", sessionSignature: "", actionSignature: "", chatSignature: "", busy: false, toastTimer: null, setupShown: false, islandSelection: null, lastTankAnimation: null, lastTankMotion: null, tankZoom: 1, tankWeapons: new Map() };
+const state = { snapshot: null, selectedId: null, selectedInitialized: false, session: null, listSignature: "", sessionSignature: "", actionSignature: "", chatSignature: "", busy: false, toastTimer: null, setupShown: false, islandSelection: null, lastTankAnimation: null, lastTankMotion: null, tankZoom: 1, tankWeapons: new Map(), unreadBySession: {} };
+const UNREAD_KEY = "radio-arcade-unread-v1";
+try { state.unreadBySession = JSON.parse(localStorage.getItem(UNREAD_KEY) || "{}"); } catch { state.unreadBySession = {}; }
+if (!state.unreadBySession || typeof state.unreadBySession !== "object" || Array.isArray(state.unreadBySession)) state.unreadBySession = {};
+function persistUiState() {
+  try { localStorage.setItem(UNREAD_KEY, JSON.stringify(state.unreadBySession)); }
+  catch { /* Keep the current tab usable when browser storage is unavailable. */ }
+}
+function syncPending(session) {
+  return Number(session?.sync_requested_at || 0) > Number(session?.sync_at || 0);
+}
+function recoveryNeeded(session) {
+  return syncPending(session) || /missed moves|state conflict|awaiting snapshot/i.test(session?.error || "");
+}
+function selectSession(id) {
+  state.selectedId = id;
+  if (id) state.unreadBySession[id] = 0;
+  persistUiState();
+  state.sessionSignature = ""; state.actionSignature = ""; state.chatSignature = ""; state.islandSelection = null;
+}
 const RESOURCE_META = [
   ["timber", "♣"], ["clay", "⬟"], ["wool", "✿"], ["grain", "✳"], ["ore", "◈"],
 ];
@@ -50,6 +69,7 @@ function notify(message) {
 const activitySeen = new Set();
 let activityInitialized = false;
 let activityInbox;
+let activityOwner = "", activityLastId = null;
 function openActivityTable(id) {
   if (!id) {
     activityInbox.hidden = true;
@@ -58,13 +78,23 @@ function openActivityTable(id) {
     $("#cq-panel").scrollIntoView({ block: "nearest" });
     return;
   }
-  state.selectedId = id; state.sessionSignature = ""; state.chatSignature = "";
+  selectSession(id);
   activityInbox.hidden = true;
   switchPane("arena"); refresh();
 }
 function renderActivity(events) {
+  const owner = state.snapshot?.callsign || "station";
+  if (owner !== activityOwner) {
+    activityOwner = owner;
+    try {
+      const saved = localStorage.getItem(`radio-arcade-activity-${owner}`);
+      activityLastId = saved === null ? Math.max(0, ...events.map(event => event.id || 0)) : Number(saved);
+    } catch { activityLastId = Math.max(0, ...events.map(event => event.id || 0)); }
+    if (events.length && Math.max(...events.map(event => event.id || 0)) < activityLastId) activityLastId = 0;
+  }
   if (!activityInbox) {
-    const button = node("button", "button secondary", "Notifications"); button.type = "button";
+    const button = node("button", "button secondary", "Notifications"); button.type = "button"; button.id = "activity-open";
+    button.setAttribute("aria-label", "Open notifications");
     document.querySelector("#settings-open").before(button);
     activityInbox = node("section", "activity-inbox"); activityInbox.hidden = true;
     activityInbox.setAttribute("aria-label", "Notifications");
@@ -91,6 +121,8 @@ function renderActivity(events) {
   const fresh = events.filter(event => !activitySeen.has(event.id));
   for (const event of fresh) {
     activitySeen.add(event.id);
+    if (event.id > activityLastId && event.title === "New message" && event.session_id && event.session_id !== state.selectedId)
+      state.unreadBySession[event.session_id] = (state.unreadBySession[event.session_id] || 0) + 1;
     if (!activityInitialized) continue;
     activityInbox.button.textContent = "Notifications ●";
     notify(`${event.title} · ${event.body}`);
@@ -101,6 +133,11 @@ function renderActivity(events) {
       } catch { /* The in-app inbox remains available. */ }
     }
   }
+  if (fresh.length) persistUiState();
+  if (events.length) {
+    activityLastId = Math.max(activityLastId || 0, ...events.map(event => event.id || 0));
+    try { localStorage.setItem(`radio-arcade-activity-${owner}`, String(activityLastId)); } catch { /* Activity remains visible in this tab. */ }
+  }
   activityInitialized = true;
 }
 
@@ -108,7 +145,7 @@ function byteLength(text) { return new TextEncoder().encode(text).length; }
 function isPractice() { return state.snapshot?.transport === "practice"; }
 function isObserver() { return Boolean(state.snapshot?.observer_mode); }
 function canAct(session = state.session) {
-  return Boolean(session && !isObserver() && session.status === "active" && !session.has_pending_action &&
+  return Boolean(session && !isObserver() && session.status === "active" && !session.has_pending_action && !recoveryNeeded(session) &&
     (isPractice() || state.snapshot?.tx_enabled) &&
     (isPractice() || session.current_player === state.snapshot?.callsign));
 }
@@ -233,12 +270,25 @@ function updateGamePreview() {
 function renderSessionList(sessions) {
   const list = $("#session-list");
   const previous = state.selectedId;
+  if (!state.selectedInitialized && state.snapshot?.callsign) {
+    state.selectedInitialized = true;
+    try { state.selectedId = localStorage.getItem(`radio-arcade-selected-${state.snapshot.callsign}`) || null; } catch { /* Keep the in-memory selection. */ }
+  }
   $("#session-count").textContent = sessions.length;
   $("#mobile-table-count").textContent = sessions.length;
-  if (!sessions.some(session => session.id === previous)) state.selectedId = sessions[0]?.id || null;
+  if (!sessions.some(session => session.id === state.selectedId)) state.selectedId = sessions[0]?.id || null;
+  try { if (state.snapshot?.callsign && state.selectedId) localStorage.setItem(`radio-arcade-selected-${state.snapshot.callsign}`, state.selectedId); } catch { /* Keep the in-memory selection. */ }
   if (state.selectedId !== previous) { state.sessionSignature = ""; state.actionSignature = ""; state.chatSignature = ""; }
-  const signature = JSON.stringify([state.selectedId, state.snapshot?.callsign, state.snapshot?.observer_mode,
-    sessions.map(session => [session.id, session.game, session.status, session.current_player, session.players, session.coordinator, session.hosted])]);
+  if (state.selectedId && state.unreadBySession[state.selectedId]) {
+    state.unreadBySession[state.selectedId] = 0;
+    persistUiState();
+  }
+  const query = $("#table-search").value.trim().toLocaleLowerCase();
+  const filter = $("#table-filter").value;
+  const signature = JSON.stringify([state.selectedId, state.snapshot?.callsign, state.snapshot?.observer_mode, query, filter,
+    sessions.map(session => [session.id, session.game, session.status, session.current_player, session.players, session.coordinator, session.hosted,
+      session.revision, session.sequence, session.updated, session.sync_at, session.sync_requested_at, session.error, session.has_pending_action,
+      syncPending(session) ? Math.floor(Date.now() / 30_000) : 0, state.unreadBySession[session.id] || 0])]);
   if (signature === state.listSignature) return;
   state.listSignature = signature;
   const scroll = list.scrollTop;
@@ -248,31 +298,59 @@ function renderSessionList(sessions) {
     list.append(empty);
     return;
   }
-  for (const session of sessions) {
+  const priority = session => session.status === "invited" ? 0 :
+    session.status === "active" && (isPractice() || session.current_player === state.snapshot.callsign || session.error || syncPending(session)) ? 1 :
+    session.status === "active" && session.has_pending_action ? 2 : session.status === "active" ? 3 :
+    ["lobby", "joining"].includes(session.status) ? 4 : 5;
+  const ordered = sessions.map((session, index) => ({ session, index }))
+    .sort((a, b) => priority(a.session) - priority(b.session) || a.index - b.index);
+  let shown = 0;
+  for (const { session } of ordered) {
+    const practiceTurn = isPractice() && session.status === "active";
+    const ownTurn = practiceTurn || session.current_player === state.snapshot.callsign;
+    const needsSync = recoveryNeeded(session);
+    const unread = state.unreadBySession[session.id] || 0;
+    const other = isObserver() ? (session.players.join(" / ") || session.coordinator) :
+      (session.players.find(player => player !== state.snapshot.callsign) || (session.hosted ? "Open table" : "Waiting for stations"));
+    const searchable = [session.game, other, session.id, session.status, session.last_move?.actor, session.last_move?.description].join(" ").toLocaleLowerCase();
+    if (query && !searchable.includes(query)) continue;
+    if (filter === "your-turn" && !(session.status === "active" && ownTurn)) continue;
+    if (filter === "waiting" && !(session.status === "active" && !ownTurn && !needsSync && !session.has_pending_action)) continue;
+    if (filter === "resync" && !needsSync) continue;
+    if (filter === "unread" && !unread) continue;
     const card = node("button", `session-card${session.id === state.selectedId ? " selected" : ""}`);
     card.type = "button";
     card.dataset.session = session.id;
     const top = node("div", "session-card-top");
     top.append(node("span", "session-name", session.game));
-    const status = node("span", "session-state", session.current_player === state.snapshot.callsign ? "Your turn" : session.status);
+    const label = syncPending(session) ? "Resync pending" : needsSync ? "Needs resync" :
+      session.has_pending_action ? "Move awaiting commit" : ownTurn ? "Your move" : session.status === "active" ? "Waiting" : session.status;
+    const status = node("span", "session-state", label);
+    if (needsSync) status.classList.add("sync-needed");
+    else if (session.has_pending_action) status.classList.add("waiting");
     if (!["active", "finished"].includes(session.status)) status.classList.add("waiting");
     top.append(status);
     const summary = node("div", "session-summary");
-    const other = isObserver() ? (session.players.join(" / ") || session.coordinator) :
-      (session.players.find(player => player !== state.snapshot.callsign) || (session.hosted ? "Open table" : "Waiting for stations"));
     summary.append(node("span", "", other), node("span", "bullet", "·"),
       node("span", "", `${session.players.length} station${session.players.length === 1 ? "" : "s"}`),
       node("span", "bullet", "·"), node("span", "", session.id.slice(-6)));
+    const activity = session.last_move ? `${session.last_move.actor}: ${session.last_move.description}` : session.status;
+    summary.append(node("span", "session-activity", activity));
+    if (unread) summary.append(node("span", "session-unread", `${unread} unread`));
     card.append(top, summary);
     list.append(card);
+    shown++;
   }
+  if (!shown) list.append(node("div", "empty-list", "No tables match. Try a different search or filter."));
   list.scrollTop = scroll;
 }
 
 function setTurnBanner(session) {
   const banner = $("#turn-banner");
   let text = "", tone = "";
-  if (isObserver()) { text = session.view ? "OBSERVING · RECEIVE ONLY" : "AWAITING GAME SNAPSHOT · RECEIVE ONLY"; tone = "warning"; }
+  if (syncPending(session)) { text = `RESYNC REQUESTED · WAITING FOR ${session.coordinator} TO SEND THE LATEST TABLE`; tone = "waiting"; }
+  else if (recoveryNeeded(session)) { text = `TABLE MAY BE OUT OF DATE · RESYNC BEFORE MAKING A MOVE · ${session.error || "Your turn is paused until the latest snapshot arrives."}`; tone = "warning"; }
+  else if (isObserver()) { text = session.view ? "OBSERVING · RECEIVE ONLY" : "AWAITING GAME SNAPSHOT · RECEIVE ONLY"; tone = "warning"; }
   else if (session.status === "invited") { text = `INVITATION FROM ${session.coordinator} · ACCEPT TO JOIN`; tone = "warning"; }
   else if (session.status === "lobby") { text = session.hosted ? (session.coordinator === state.snapshot.callsign ? "DEALER · OPEN TO JOIN REQUESTS" : "PUBLIC TABLE · JOIN TO PLAY") : "LOBBY · INVITE STATIONS, THEN START"; tone = "waiting"; }
   else if (session.status === "joining") { text = session.hosted ? "JOIN REQUEST SENT · WAITING FOR DEALER" : "WAITING FOR THE HOST TO START"; tone = "waiting"; }
@@ -375,11 +453,16 @@ function renderSessionActions(session) {
   }
   if (!isObserver() && session.status === "lobby" && owner)
     addButton(actions, "Start this game", () => command("start_game"), true, !canTransmit() || session.invited?.length > 0);
-  if (isObserver() || (!owner && ["active", "finished"].includes(session.status)))
-    addButton(actions, isObserver() ? "Request snapshot · transmits" : "Sync / recover state", () => {
+  if (session.status === "active" && (isObserver() || session.players.includes(state.snapshot.callsign))) {
+    const waitingForSync = syncPending(session);
+    const syncTimedOut = waitingForSync && Date.now() / 1000 - Number(session.sync_requested_at) > 30;
+    const label = waitingForSync ? syncTimedOut ? "Resend resync request" : "Resync requested · waiting for table" :
+      isObserver() ? "Resync table · transmits" : owner ? "Send latest state to table" : "Resync table";
+    addButton(actions, label, () => {
       if (isObserver() && !window.confirm("This sends one synchronization request over the radio. Continue?")) return;
-      command("request_sync");
-    }, false, !state.snapshot?.tx_enabled && !isPractice());
+      requestSessionSync(session);
+    }, false, (waitingForSync && !syncTimedOut) || (!state.snapshot?.tx_enabled && !isPractice()));
+  }
   if (!isObserver() && session.hosted && session.has_pending_action)
     addButton(actions, "Retry pending move", () => command("resend_pending_action"), false, !canTransmit());
   if (!isObserver() && state.snapshot.transport === "connected") {
@@ -392,6 +475,11 @@ function renderSessionActions(session) {
     if (!window.confirm("Delete this game's saved state, chat, and queued messages from this device? This does not notify other stations.")) return;
     command("delete_game");
   });
+}
+
+function requestSessionSync(session) {
+  state.actionSignature = "";
+  return sendCommand("request_sync", { session_id: session.id });
 }
 
 function renderScoreStrip(session, view) {
@@ -1490,10 +1578,12 @@ function renderChat(messages) {
 }
 
 function renderSession(session, messages) {
+  const syncPending = s => Number(s?.sync_requested_at || 0) > Number(s?.sync_at || 0);
   observeCompletion(session);
   state.session = session;
   const signature = JSON.stringify([session.id, session.status, session.revision, session.sequence,
-    session.current_player, session.view, session.has_pending_action, session.invited, session.error, session.last_move]);
+    session.current_player, session.view, session.has_pending_action, session.invited, session.error, session.last_move,
+    session.sync_at, session.sync_requested_at, syncPending(session)]);
   $("#arena-title").textContent = session.game;
   $("#arena-game-tag").textContent = `${session.status.toUpperCase()} · ${session.hosted ? "HOSTED BROADCAST" : "DIRECT TABLE"}`;
   const last = session.last_move ? ` · Last: ${session.last_move.actor} ${session.last_move.description}` : "";
@@ -1503,7 +1593,8 @@ function renderSession(session, messages) {
   renderRoster(session);
   const actionSignature = JSON.stringify([session.id, session.status, session.players, session.invited,
     session.hosted, session.coordinator, session.has_pending_action, state.snapshot.transport,
-    state.snapshot.observer_mode, state.snapshot.callsign, state.snapshot.tx_enabled]);
+    state.snapshot.observer_mode, state.snapshot.callsign, state.snapshot.tx_enabled,
+    syncPending(session) ? Math.floor(Date.now() / 30_000) : 0]);
   if (actionSignature !== state.actionSignature) {
     state.actionSignature = actionSignature;
     renderSessionActions(session);
@@ -1591,11 +1682,11 @@ async function sendCommand(command, extra = {}) {
   try {
     const result = await request("/api/command", { method: "POST", body: JSON.stringify({ command, ...extra }) });
     if ((command === "create_game" || command === "answer_cq") && result.session_id) {
-      state.selectedId = result.session_id; state.sessionSignature = ""; state.chatSignature = ""; state.islandSelection = null;
+      selectSession(result.session_id);
       switchPane("arena");
     }
     if (command === "delete_game") {
-      state.selectedId = null; state.sessionSignature = ""; state.chatSignature = ""; state.islandSelection = null;
+      selectSession(null);
     }
     await refresh();
     return result;
@@ -1667,6 +1758,8 @@ $("#cq-list").addEventListener("click", event => {
 });
 $("#table-mode").addEventListener("change", updateTableSetup);
 $("#game-select").addEventListener("change", updateGamePreview);
+$("#table-search").addEventListener("input", () => { state.listSignature = ""; if (state.snapshot) renderSessionList(state.snapshot.sessions || []); });
+$("#table-filter").addEventListener("change", () => { state.listSignature = ""; if (state.snapshot) renderSessionList(state.snapshot.sessions || []); });
 $("#arena-body").addEventListener("click", event => {
   if (event.target.closest("[data-open-tables]")) switchPane("lobby");
 });
@@ -1677,7 +1770,7 @@ window.addEventListener("resize", placeSessionActions);
 $("#session-list").addEventListener("click", event => {
   const button = event.target.closest("[data-session]");
   if (!button) return;
-  state.selectedId = button.dataset.session; state.sessionSignature = ""; state.chatSignature = ""; state.islandSelection = null;
+  selectSession(button.dataset.session);
   switchPane("arena");
   refresh();
 });

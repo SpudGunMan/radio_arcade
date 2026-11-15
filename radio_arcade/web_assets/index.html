@@ -35,6 +35,18 @@
           <div><p class="eyebrow">YOUR GAME ROOM</p><h2>Tables <span id="session-count" class="count-pill">0</span></h2></div>
           <span class="live-pulse" title="Live updates"></span>
         </div>
+        <div class="table-tools" role="search">
+          <label class="sr-only" for="table-search">Find a game or station</label>
+          <input id="table-search" type="search" placeholder="Find a game or station…" autocomplete="off">
+          <label class="sr-only" for="table-filter">Filter tables</label>
+          <select id="table-filter" aria-label="Filter tables">
+            <option value="all">All tables</option>
+            <option value="your-turn">Your move</option>
+            <option value="waiting">Waiting</option>
+            <option value="resync">Needs resync</option>
+            <option value="unread">Unread chat</option>
+          </select>
+        </div>
         <div id="session-list" class="session-list" aria-live="polite"></div>
         <section class="new-table">
           <div class="section-rule"><span>START SOMETHING</span></div>

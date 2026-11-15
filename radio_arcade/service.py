@@ -277,6 +277,8 @@ class ArcadeService:
         self.transport.disconnect()
 
     def _save(self, session: dict[str, Any]) -> None:
+        session.setdefault("sync_at", 0)
+        session.setdefault("sync_requested_at", 0)
         session["updated"] = time.time()
         self.store.save_session(session)
         if (self.station_id_enabled and session["status"] == "finished"
@@ -294,7 +296,7 @@ class ArcadeService:
                    "players": players, "invited": invited, "status": status,
                    "revision": 0, "sequence": 0, "state": None, "pending_action": None,
                    "chat_sequence": 0, "opaque_sequence": 0, "last_actor": None, "last_action": None,
-                   "updated": time.time(), "error": "", "hosted": hosted}
+                   "sync_at": 0, "sync_requested_at": 0, "updated": time.time(), "error": "", "hosted": hosted}
         self._sessions[session["id"]] = session
         self._save(session)
         return session
@@ -961,15 +963,32 @@ class ArcadeService:
             row = self._sessions[sid]
             if self.observer_mode:
                 # Explicit UI action only: no automatic requests, retries or ACKs.
+                row["sync_requested_at"] = time.time()
+                self._save(row)
                 self._transmit(self._make(row, row["coordinator"], Kind.SYNC_REQUEST,
                                           row["sequence"], row["revision"]))
                 return
             if row["coordinator"] == self.callsign:
+                if row["state"] is None or row["status"] not in ("active", "finished"):
+                    return
+                row["sync_at"] = time.time()
+                row["sync_requested_at"] = 0
+                self._save(row)
+                if row.get("hosted"):
+                    self._send_snapshot(row, "*")
+                else:
+                    for player in row["players"]:
+                        if player != self.callsign:
+                            self._send_snapshot(row, player)
                 return
             if row.get("hosted"):
+                row["sync_requested_at"] = time.time()
+                self._save(row)
                 self._transmit(self._make(row, row["coordinator"], Kind.SYNC_REQUEST,
                                           row["sequence"], row["revision"]))
                 return
+            row["sync_requested_at"] = time.time()
+            self._save(row)
             self._reliable(row, row["coordinator"], Kind.SYNC_REQUEST,
                            row["sequence"], row["revision"])
 
@@ -1528,6 +1547,8 @@ class ArcadeService:
         row["status"] = "finished" if decoded.get("finished") or (last_move and last_move[1] == FORFEIT_ACTION) else "active"
         row["last_actor"], row["last_action"] = last_move if last_move else (None, None)
         row["pending_action"], row["error"] = pending, ""
+        row["sync_at"] = time.time()
+        row["sync_requested_at"] = 0
         self._save(row)
         self._emit("session_updated", row["id"], session=self.session(row["id"]), synchronized=True)
         self._resolve_battleship_pending(row)
