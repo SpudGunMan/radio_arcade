@@ -91,6 +91,38 @@ class DesktopScenarios(unittest.TestCase):
             finally:
                 window.close(); engine.close(); app.processEvents()
 
+    def test_sea_warfare_board_fits_short_desktop_window(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication, QPushButton
+        from radio_arcade.desktop import ArcadeWindow
+        from radio_arcade.practice import PracticeService
+        from radio_arcade.settings import Settings
+
+        app = QApplication.instance() or QApplication([])
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"RADIO_ARCADE_HOME": directory}):
+            engine = PracticeService("AG7SU")
+            window = ArcadeWindow(Settings(callsign="AG7SU", transport="practice"))
+            window._service_ready(engine)
+            sid = engine.create_game("sea-warfare")
+            window.selected_id = sid; window._show_session(sid)
+            window.show(); app.processEvents(); window.resize(1324, 552); app.processEvents()
+            try:
+                adaptive_cells = [button for button in window.board_scroll.findChildren(QPushButton)
+                                  if button.property("adaptiveRadarCell")]
+                grid = adaptive_cells[0].parentWidget()
+                rules_toggle = next(button for button in window.board_scroll.findChildren(QPushButton)
+                                    if "Rules" in button.text())
+                self.assertEqual(len(adaptive_cells), 100)
+                self.assertLess(adaptive_cells[0].height(), 28)
+                self.assertEqual(len({button.width() for button in adaptive_cells}), 1)
+                self.assertEqual(len({button.height() for button in adaptive_cells}), 1)
+                self.assertEqual(adaptive_cells[0].width(), adaptive_cells[0].height())
+                self.assertLess(grid.width(), window.board_scroll.viewport().width())
+                self.assertFalse(rules_toggle.isChecked())
+                self.assertEqual(window.board_scroll.verticalScrollBar().maximum(), 0)
+            finally:
+                window.close(); engine.close(); app.processEvents()
+
     def test_games_panel_create_delete_and_reselect(self):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PySide6.QtWidgets import QApplication, QMessageBox, QScrollArea

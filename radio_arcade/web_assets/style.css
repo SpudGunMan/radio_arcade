@@ -671,3 +671,95 @@ body { min-width: 320px; min-height: 100svh; overflow-x: hidden; font-size: 14px
   .table-tools { grid-template-columns: minmax(0,1fr) 98px; gap: 5px; }
   .table-tools input, .table-tools select { padding: 0 7px; font-size: 11px; }
 }
+
+/* Short viewports: collapse chrome first so the board keeps a real viewport.
+   Mirrors the desktop client's vertical-density rules: header, banner, score
+   strip, and hints shrink while boards scale with height instead of width. */
+.arena-head-copy { min-width: 0; flex: 1; }
+.arena-subtitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tank-pan-hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.turn-meta { margin: 0; line-height: 1.45; }
+.tank-help, .island-selection, .siege-helper, .preview-note { max-width: 100%; }
+.island-layout { grid-template-columns: minmax(0, 1.5fr) minmax(220px, .9fr); }
+
+@media (max-height: 760px) {
+  .topbar { height: 56px; }
+  .workspace { min-height: calc(100svh - 56px); padding-top: 12px; padding-bottom: 12px; }
+  .arena-panel { min-height: 0; padding: 16px clamp(14px, 2vw, 30px) 12px; }
+  .arena-head { min-height: 0; }
+  .arena-head .eyebrow { margin-bottom: 4px; }
+  .arena-head h1 { font-size: clamp(20px, 2vw, 26px); }
+  .turn-banner { margin-top: 8px; padding: 8px 11px; font-size: 12px; line-height: 1.4; }
+  .arena-body { min-height: 0; justify-content: flex-start; padding: 10px 0; }
+  .game-block { gap: 8px; margin: 0; }
+  .score-strip { padding: 6px; gap: 6px; }
+  .score-card { padding: 6px 8px; }
+  .score-value { font-size: clamp(18px, 2.4vw, 26px); }
+  .score-unit { margin-top: 4px; }
+  .board-tictactoe { grid-template-columns: repeat(3, minmax(0, min(118px, 22vh))); grid-template-columns: repeat(3, minmax(0, min(118px, 22dvh))); gap: 6px; }
+  .battleship-grid { grid-template-columns: repeat(10, minmax(0, min(38px, 4.5vh))); grid-template-columns: repeat(10, minmax(0, min(38px, 4.5dvh))); }
+  .word-board-shell { width: max(260px, min(100%, 600px, calc(100vh - 330px))); width: max(260px, min(100%, 600px, calc(100dvh - 330px))); }
+  .island-svg { max-height: max(160px, min(490px, calc(100vh - 330px))); max-height: max(160px, min(490px, calc(100dvh - 330px))); }
+  .hexxagon-board { max-height: max(180px, min(65vh, calc(100vh - 300px))); max-height: max(180px, min(65dvh, calc(100dvh - 300px))); }
+  .tank-arena { max-height: max(180px, calc(100vh - 300px)); max-height: max(180px, calc(100dvh - 300px)); }
+  .tank-map { min-height: 0; }
+  .siege-hero { padding: 14px 16px; }
+  .siege-hero p { margin-bottom: 10px; }
+  .siege-card { min-height: 0; }
+}
+@media (max-height: 600px) {
+  .topbar { height: 48px; gap: 14px; }
+  .brand-context { display: none; }
+  .mobile-nav { top: 48px; padding: 6px 9px; }
+  .mobile-tab { min-height: 40px; }
+  .workspace { min-height: calc(100svh - 48px); }
+  .arena-panel { padding: 12px clamp(12px, 2vw, 24px) 10px; }
+  .arena-head .eyebrow, .arena-subtitle { display: none; }
+  .arena-head h1 { font-size: 20px; margin: 0; }
+  .revision-tag { padding: 5px 7px; }
+  .turn-banner { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 0; margin-top: 6px; padding: 7px 10px; font-size: 11px; }
+  .arena-foot { display: none; }
+  .arena-body { padding: 8px 0; }
+  .game-block { gap: 6px; }
+  .score-strip { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(110px, 1fr); overflow-x: auto; padding: 5px; gap: 5px; }
+  .score-heading { display: none; }
+  .score-card { padding: 5px 8px; }
+  .score-value { font-size: 19px; }
+  .turn-meta, .tank-help, .siege-helper, .island-selection { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-height: 2.9em; }
+  .preview-note, .island-goal { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .island-goal { font-size: 9px; padding: 8px; }
+  .island-selection { min-height: 0; }
+  .island-legend { display: none; }
+  .island-side { gap: 6px; }
+  .word-meta { font-size: 8px; gap: 6px 12px; }
+  .word-bag { padding: 3px 6px; }
+  .word-board-shell { width: max(240px, min(100%, 600px, calc(100vh - 240px))); width: max(240px, min(100%, 600px, calc(100dvh - 240px))); }
+  .island-svg { max-height: max(150px, min(490px, calc(100vh - 240px))); max-height: max(150px, min(490px, calc(100dvh - 240px))); }
+  .hexxagon-board { max-height: max(160px, min(65vh, calc(100vh - 230px))); max-height: max(160px, min(65dvh, calc(100dvh - 230px))); }
+  .tank-arena { max-height: max(150px, calc(100vh - 230px)); max-height: max(150px, calc(100dvh - 230px)); }
+  .board-tictactoe { grid-template-columns: repeat(3, minmax(0, min(118px, 20vh))); grid-template-columns: repeat(3, minmax(0, min(118px, 20dvh))); }
+  .siege-art { height: 64px; font-size: 32px; }
+  .siege-hero h2 { font-size: 22px; }
+  .siege-card { padding: 10px; gap: 6px; }
+}
+@media (max-height: 450px) {
+  .topbar { height: 44px; padding: 0 12px; gap: 10px; }
+  .brand { font-size: 12px; }
+  .connection-status { padding: 6px 8px; font-size: 10px; }
+  .tx-activity { display: none; }
+  .mobile-nav { top: 44px; }
+  .workspace { min-height: calc(100svh - 44px); padding-top: 8px; padding-bottom: 8px; }
+  .arena-panel { padding: 10px 12px 8px; }
+  .arena-head { display: none; }
+  .turn-banner { margin-top: 0; }
+  .score-unit { display: none; }
+  .tank-nav-label { display: none; }
+  .tank-minimap { height: 44px; }
+  .tank-arena { max-height: max(140px, calc(100vh - 170px)); max-height: max(140px, calc(100dvh - 170px)); }
+  .word-board-shell { width: max(220px, min(100%, 600px, calc(100vh - 180px))); width: max(220px, min(100%, 600px, calc(100dvh - 180px))); }
+  .island-svg { max-height: max(140px, min(490px, calc(100vh - 180px))); max-height: max(140px, min(490px, calc(100dvh - 180px))); }
+  .hexxagon-board { max-height: max(140px, min(65vh, calc(100vh - 170px))); max-height: max(140px, min(65dvh, calc(100dvh - 170px))); }
+  .siege-art { display: none; }
+  .siege-hero p { display: none; }
+  .siege-hero { padding: 10px 12px; }
+}

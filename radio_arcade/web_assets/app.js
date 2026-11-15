@@ -364,6 +364,7 @@ function setTurnBanner(session) {
   } else { text = session.status.toUpperCase(); tone = "waiting"; }
   if (session.error) { text = `MOVE REJECTED · ${session.error}`; tone = "warning"; }
   banner.textContent = text;
+  banner.title = text;
   banner.className = `turn-banner ${tone}`.trim();
   banner.hidden = false;
 }
@@ -1587,7 +1588,9 @@ function renderSession(session, messages) {
   $("#arena-title").textContent = session.game;
   $("#arena-game-tag").textContent = `${session.status.toUpperCase()} · ${session.hosted ? "HOSTED BROADCAST" : "DIRECT TABLE"}`;
   const last = session.last_move ? ` · Last: ${session.last_move.actor} ${session.last_move.description}` : "";
-  $("#arena-subtitle").textContent = `TABLE ${session.id.slice(-8)} · ${session.players.length} STATIONS${last}`;
+  const subtitle = `TABLE ${session.id.slice(-8)} · ${session.players.length} STATIONS${last}`;
+  $("#arena-subtitle").textContent = subtitle;
+  $("#arena-subtitle").title = subtitle;
   const revision = $("#arena-revision"); revision.hidden = false; revision.textContent = `REV ${session.revision}`;
   setTurnBanner(session);
   renderRoster(session);

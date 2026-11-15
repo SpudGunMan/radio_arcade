@@ -63,8 +63,9 @@ def game_glyph(game_name: str) -> str:
     return "◈"
 
 
-def _style_naval_button(button: QPushButton, value: int | str, enabled: bool = True):
-    button.setFixedSize(28, 28)
+def _style_naval_button(button: QPushButton, value: int | str, enabled: bool = True,
+                        cell_size: int = 28):
+    button.setFixedSize(cell_size, cell_size)
     val = str(value).strip()
     if val == "■":
         button.setStyleSheet("""
@@ -142,7 +143,7 @@ def _style_naval_button(button: QPushButton, value: int | str, enabled: bool = T
         """)
 
 
-def _add_radar_coordinates(grid: QGridLayout):
+def _add_radar_coordinates(grid: QGridLayout, cell_size: int = 28, responsive: bool = False):
     corner = QLabel("⌖")
     corner.setAlignment(Qt.AlignmentFlag.AlignCenter)
     corner.setStyleSheet("color: #00f5c4; font-size: 11px; font-weight: 800;")
@@ -150,13 +151,15 @@ def _add_radar_coordinates(grid: QGridLayout):
     for c in range(10):
         lbl = QLabel(chr(65 + c))
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setFixedSize(28, 16)
+        lbl.setFixedSize(cell_size, max(12, cell_size - 8))
+        if responsive: lbl.setProperty("radarColumn", True)
         lbl.setStyleSheet("color: #486581; font-size: 9px; font-weight: 800; font-family: monospace;")
         grid.addWidget(lbl, 0, c + 1)
     for r in range(10):
         lbl = QLabel(str(r + 1))
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setFixedSize(16, 28)
+        lbl.setFixedSize(max(12, cell_size - 8), cell_size)
+        if responsive: lbl.setProperty("radarRow", True)
         lbl.setStyleSheet("color: #486581; font-size: 9px; font-weight: 800; font-family: monospace;")
         grid.addWidget(lbl, r + 1, 0)
 
@@ -931,6 +934,8 @@ class ArcadeWindow(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, "layout_stack"):
             self._update_compact_layout()
+            self._update_vertical_density()
+            QTimer.singleShot(0, self._fit_naval_grid_cells)
 
     def _update_compact_layout(self):
         compact = self.width() < 950
@@ -941,7 +946,8 @@ class ArcadeWindow(QMainWindow):
             try: self.sync_button.setText(self._sync_label_for_session(self.engine.session(self.selected_id)))
             except KeyError: self.sync_button.setText("↻  Resync table")
         if compact == (self.layout_stack.currentWidget() is self.compact_tabs):
-            self.game_subtitle.setVisible(not compact or self.width() >= 520)
+            self.game_subtitle.setVisible((not compact or self.width() >= 520) and self.height() >= 680)
+            self._update_vertical_density()
             return
         if compact:
             self._desktop_sizes = self.desktop_splitter.sizes()
@@ -959,7 +965,7 @@ class ArcadeWindow(QMainWindow):
         self.root_layout.setContentsMargins(*( (8, 8, 8, 8) if compact else (22, 20, 22, 18) ))
         self.root_layout.setSpacing(8 if compact else 16)
         self.brand.setText("◈  ARCADE" if compact else "◈  RADIO ARCADE")
-        self.game_subtitle.setVisible(not compact or self.width() >= 520)
+        self.game_subtitle.setVisible((not compact or self.width() >= 520) and self.height() >= 680)
         self.transport_label.setVisible(not compact)
         if hasattr(self, "status_pill"):
             self.status_pill.setVisible(not compact)
@@ -987,8 +993,67 @@ class ArcadeWindow(QMainWindow):
         self.session_list.setMinimumHeight(50 if compact else 70)
         self.session_list.setVisible(not compact or self.session_list.count() > 0)
         has_score = bool(self.scoreboard_compact.text())
-        self.scoreboard_compact.setVisible(compact and has_score)
-        self.scoreboard_host.setVisible(not compact and has_score)
+        short = self.height() < 680
+        tight = self.height() < 500
+        self.scoreboard_compact.setVisible((compact or short) and has_score and not tight)
+        self.scoreboard_host.setVisible(not compact and not short and has_score)
+        self._update_vertical_density()
+
+    def _update_vertical_density(self):
+        """Give the game surface first claim on height as the window shrinks."""
+        if not hasattr(self, "board_scroll"):
+            return
+        compact = self.layout_stack.currentWidget() is self.compact_tabs
+        short = self.height() < 680
+        tight = self.height() < 500
+        dense = compact or short
+
+        # Collapse the chrome first. The board remains a real viewport even in
+        # a short window; oversized game content can scroll inside it.
+        self.top_frame.setMaximumHeight(36 if dense else 16777215)
+        self.top_frame.layout().setContentsMargins(*( (6, 0, 6, 0) if dense else (16, 8, 16, 8) ))
+        self.transport_label.setVisible(not dense)
+        self.status_label.setVisible(not dense)
+        self.tx_activity.setVisible(not dense)
+        self.footer_label.setVisible(not dense)
+        self.mode_label.setVisible(not dense)
+        self.game_subtitle.setVisible(not dense and (not compact or self.width() >= 520))
+        self.game_heading.setStyleSheet(
+            "font-size:16px; font-weight:750;" if tight else
+            "font-size:20px; font-weight:750;" if dense else ""
+        )
+        for pane, headers in zip(self.panes, self.card_headers):
+            for header in headers:
+                header.setVisible(not dense)
+        center_margins = (4, 4, 4, 4) if tight else (8, 8, 8, 8) if dense else (18, 18, 18, 18)
+        self.panes[1].layout().setContentsMargins(*center_margins)
+        self.panes[1].layout().setSpacing(3 if dense else 13)
+        self.board_scroll.setMinimumHeight(155 if dense else 220)
+        self._fit_naval_grid_cells()
+
+        has_score = bool(self.scoreboard_compact.text())
+        self.scoreboard_host.setVisible(has_score and not compact and not short)
+        self.scoreboard_compact.setVisible(has_score and (compact or short))
+
+    def _fit_naval_grid_cells(self):
+        if not hasattr(self, "board_scroll"):
+            return
+        cell_size = max(18, min(28, (self.board_scroll.viewport().height() - 110) // 11))
+        grids = set()
+        for button in self.board_scroll.findChildren(QPushButton):
+            if button.property("adaptiveRadarCell"):
+                button.setFixedSize(cell_size, cell_size)
+                grids.add(button.parentWidget())
+        for label in self.board_scroll.findChildren(QLabel):
+            if label.property("radarColumn"):
+                label.setFixedSize(cell_size, max(12, cell_size - 8))
+            elif label.property("radarRow"):
+                label.setFixedSize(max(12, cell_size - 8), cell_size)
+        for board in grids:
+            if board.layout():
+                board.layout().invalidate()
+                board.layout().activate()
+            board.adjustSize()
 
     @staticmethod
     def _card(kicker: str, title: str) -> QFrame:
@@ -1745,8 +1810,10 @@ class ArcadeWindow(QMainWindow):
             self.scoreboard_layout.takeAt(0).widget().deleteLater()
         score_visible = bool(session and session.get("view"))
         compact = self.layout_stack.currentWidget() is self.compact_tabs
-        self.scoreboard_host.setVisible(score_visible and not compact)
-        self.scoreboard_compact.setVisible(score_visible and compact)
+        short = self.height() < 680
+        tight = self.height() < 500
+        self.scoreboard_host.setVisible(score_visible and not compact and not short)
+        self.scoreboard_compact.setVisible(score_visible and (compact or short))
         if score_visible:
             data = scoreboard(session)
             self.scoreboard_compact.setText("  ·  ".join(
@@ -2110,6 +2177,7 @@ class ArcadeWindow(QMainWindow):
                 prompt.setStyleSheet("color: #38bdf8; font-size: 12px; font-weight: 700;")
                 box.addWidget(prompt); box.addWidget(vertical)
                 board = QWidget(); grid = QGridLayout(board); grid.setSpacing(2); grid.setContentsMargins(8, 8, 8, 8)
+                board.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
                 board.setStyleSheet("QWidget { background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #0a1b28, stop:0.7 #06121c, stop:1 #030a10); border: 1px solid rgba(0, 245, 196, 0.22); border-radius: 12px; }")
                 _add_radar_coordinates(grid)
                 for i in range(100):
@@ -2126,7 +2194,7 @@ class ArcadeWindow(QMainWindow):
                         self._board_signature = None
                         self._refresh_sessions()
                     button.clicked.connect(place); grid.addWidget(button, (i//10) + 1, (i%10) + 1)
-                box.addWidget(board)
+                box.addWidget(board, 0, Qt.AlignmentFlag.AlignHCenter)
             elif view["phase"] == "setup":
                 msg = QLabel("Fleet saved privately · waiting for both stations")
                 msg.setStyleSheet("color: #94a3b8; font-size: 12px; padding: 10px 0;")
@@ -2141,6 +2209,7 @@ class ArcadeWindow(QMainWindow):
                     own_header.setStyleSheet("color: #38bdf8; font-size: 11px; font-weight: 800; letter-spacing: 1px;")
                     box.addWidget(own_header)
                     own = QWidget(); own_grid = QGridLayout(own); own_grid.setSpacing(2); own_grid.setContentsMargins(6, 6, 6, 6)
+                    own.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
                     own.setStyleSheet("QWidget { background: #07121b; border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 10px; }")
                     _add_radar_coordinates(own_grid)
                     own_cells = set(sum(session["private_fleet"], []))
@@ -2153,11 +2222,12 @@ class ArcadeWindow(QMainWindow):
                         else:
                             lbl.setStyleSheet("background: #06111b; color: #152738; border: 1px solid rgba(255, 255, 255, 0.04); border-radius: 4px; font-size: 11px;")
                         own_grid.addWidget(lbl, (i//10) + 1, (i%10) + 1)
-                    box.addWidget(own)
+                    box.addWidget(own, 0, Qt.AlignmentFlag.AlignHCenter)
                 enemy_header = QLabel("ENEMY WATERS · CALLED COORDINATES")
                 enemy_header.setStyleSheet("color: #f43f5e; font-size: 11px; font-weight: 800; letter-spacing: 1px;")
                 box.addWidget(enemy_header)
                 board = QWidget(); grid = QGridLayout(board); grid.setSpacing(2); grid.setContentsMargins(8, 8, 8, 8)
+                board.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
                 board.setStyleSheet("QWidget { background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #0a1b28, stop:0.7 #06121c, stop:1 #030a10); border: 1px solid rgba(0, 245, 196, 0.22); border-radius: 12px; }")
                 _add_radar_coordinates(grid)
                 for i, value in enumerate(view["shots"]):
@@ -2166,7 +2236,7 @@ class ArcadeWindow(QMainWindow):
                     _style_naval_button(button, value if value else txt, enabled=bool(active and value==0))
                     button.setEnabled(active and value==0); button.clicked.connect(lambda _=False, cell=i: self._submit_action(bytes((cell,))))
                     grid.addWidget(button, (i//10) + 1, (i%10) + 1)
-                box.addWidget(board)
+                box.addWidget(board, 0, Qt.AlignmentFlag.AlignHCenter)
             self.board_layout.addWidget(host)
         elif view["kind"] == "sea-warfare":
             self._render_sea_warfare(session, view)
@@ -2345,7 +2415,7 @@ class ArcadeWindow(QMainWindow):
             box.addWidget(raw); box.addWidget(send); self.board_layout.addWidget(panel)
 
     def _render_sea_warfare(self, session: dict, view: dict):
-        host = QWidget(); box = QVBoxLayout(host); box.setSpacing(7)
+        host = QWidget(); box = QVBoxLayout(host); box.setSpacing(4)
         active = (not self.settings.observer_mode and session["status"] == "active"
                   and not session["pending_action"] and not session.get("resync_pending")
                   and (self.settings.transport == "practice" or
@@ -2354,24 +2424,39 @@ class ArcadeWindow(QMainWindow):
                        "⚓ CRUISER: one free move  ·  DESTROYER: disarms one mine\n"
                        "⚓ SUBMARINE: one sonar row  ·  PATROL BOAT: optional hidden mine")
         rules.setStyleSheet("background: rgba(0, 245, 196, 0.05); border: 1px solid rgba(0, 245, 196, 0.2); border-radius: 10px; padding: 10px 14px; color: #7dd3fc; font-size: 11px; line-height: 1.5;")
-        rules.setWordWrap(True); box.addWidget(rules)
+        rules.setWordWrap(True)
+        rules.hide()
         phase_badge = QLabel(f"◈ {session['current_player']}  ·  {view['phase'].upper()}")
         phase_badge.setStyleSheet("background: rgba(0, 245, 196, 0.08); border: 1px solid rgba(0, 245, 196, 0.25); border-radius: 8px; padding: 6px 12px; color: #00f5c4; font-size: 11px; font-weight: 800; letter-spacing: 1px;")
-        box.addWidget(phase_badge)
+        rules_toggle = QPushButton("ⓘ Rules")
+        rules_toggle.setCheckable(True)
+        rules_toggle.setMaximumWidth(88)
+        rules_toggle.toggled.connect(lambda expanded: (rules.setVisible(expanded), rules_toggle.setText("Hide rules" if expanded else "ⓘ Rules")))
+        phase_row = QHBoxLayout(); phase_row.setContentsMargins(0, 0, 0, 0); phase_row.setSpacing(6)
+        phase_row.addWidget(phase_badge, 1); phase_row.addWidget(rules_toggle)
+        box.addLayout(phase_row)
+        box.addWidget(rules)
+
+        # Size the 10x10 playfield against the actual available viewport so
+        # setup instructions cannot push it below the fold on short windows.
+        naval_cell_size = max(18, min(28, (self.board_scroll.viewport().height() - 110) // 11))
 
         def refresh_board():
             self._board_signature = None
             self._show_session(session["id"])
 
         def grid_widget(cells, enabled=False, handler=None, marks=None, fleet=None):
-            board = QWidget(); grid = QGridLayout(board); grid.setSpacing(2); grid.setContentsMargins(8, 8, 8, 8)
+            board = QWidget(); grid = QGridLayout(board); grid.setSpacing(1); grid.setContentsMargins(4, 4, 4, 4)
+            board.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             board.setStyleSheet("QWidget { background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #0a1b28, stop:0.7 #06121c, stop:1 #030a10); border: 1px solid rgba(0, 245, 196, 0.22); border-radius: 12px; }")
-            _add_radar_coordinates(grid)
+            _add_radar_coordinates(grid, naval_cell_size, responsive=True)
             for index in range(100):
                 mark = (marks or {}).get(index)
                 txt = "■" if index in cells else "□"
-                button = QPushButton(txt); button.setFixedSize(28, 28)
-                _style_naval_button(button, txt, enabled=bool(enabled and handler is not None))
+                button = QPushButton(txt); button.setFixedSize(naval_cell_size, naval_cell_size)
+                button.setProperty("adaptiveRadarCell", True)
+                _style_naval_button(button, txt, enabled=bool(enabled and handler is not None),
+                                    cell_size=naval_cell_size)
                 button.setEnabled(enabled and handler is not None)
                 if handler is not None:
                     button.clicked.connect(lambda _=False, cell=index: handler(cell))
@@ -2388,7 +2473,7 @@ class ArcadeWindow(QMainWindow):
                 sprite = QPixmap(str(assets / name))
                 if sprite.isNull(): continue
                 length = len(ship)
-                width, height = (28, length*28+2*(length-1)) if vertical_ship else (length*28+2*(length-1), 28)
+                width, height = (naval_cell_size, length*naval_cell_size+(length-1)) if vertical_ship else (length*naval_cell_size+(length-1), naval_cell_size)
                 image = QLabel(); image.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
                 image.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 image.setPixmap(sprite.scaled(width, height, Qt.AspectRatioMode.IgnoreAspectRatio,
@@ -2424,7 +2509,10 @@ class ArcadeWindow(QMainWindow):
 
             if len(ships) < len(fleet_sizes):
                 index = len(ships); size = fleet_sizes[index]
-                box.addWidget(QLabel(f"Place vessel {index+1} of 6 · length {size}")); box.addWidget(vertical)
+                vertical.setStyleSheet("color:#cbd5e1;font-size:11px;font-weight:600")
+                prompt_row = QHBoxLayout(); prompt_row.setContentsMargins(0, 0, 0, 0)
+                prompt_row.addWidget(QLabel(f"Place vessel {index+1} of 6 · length {size}")); prompt_row.addStretch(1); prompt_row.addWidget(vertical)
+                box.addLayout(prompt_row)
                 occupied = set(sum(ships, []))
                 def place_ship(cell):
                     row, col = divmod(cell, 10); is_vertical = vertical.isChecked()
@@ -2437,7 +2525,8 @@ class ArcadeWindow(QMainWindow):
                         finish_setup()
                     else:
                         refresh_board()
-                box.addWidget(grid_widget(occupied, active, place_ship, fleet=ships))
+                box.addWidget(grid_widget(occupied, active, place_ship, fleet=ships),
+                              0, Qt.AlignmentFlag.AlignHCenter)
             elif not draft["mine_done"]:
                 box.addWidget(QLabel("Optional: place one hidden mine on the patrol boat."))
                 skip = QPushButton("Skip mine"); skip.clicked.connect(lambda: (draft.update(mine_done=True), refresh_board())); box.addWidget(skip)
@@ -2448,7 +2537,8 @@ class ArcadeWindow(QMainWindow):
                     if draft["decoy_done"]: finish_setup()
                     else: refresh_board()
                 box.addWidget(grid_widget(patrol, active, place_mine,
-                    marks={} if draft["mine"] is None else {draft["mine"]:"✹"}, fleet=ships))
+                    marks={} if draft["mine"] is None else {draft["mine"]:"✹"}, fleet=ships),
+                    0, Qt.AlignmentFlag.AlignHCenter)
             elif not draft["decoy_done"]:
                 box.addWidget(QLabel("Optional: place a one-cell inflatable decoy in open water."))
                 skip = QPushButton("Skip decoy")
@@ -2463,7 +2553,8 @@ class ArcadeWindow(QMainWindow):
                     finish_setup()
                 setup_marks = {} if draft["mine"] is None else {draft["mine"]:"✹"}
                 if draft["decoy"] is not None: setup_marks[draft["decoy"]] = "◉"
-                box.addWidget(grid_widget(occupied, active, place_decoy, marks=setup_marks, fleet=ships))
+                box.addWidget(grid_widget(occupied, active, place_decoy, marks=setup_marks, fleet=ships),
+                              0, Qt.AlignmentFlag.AlignHCenter)
         elif view["phase"] == "setup":
             box.addWidget(QLabel("Fleet and optional extras are saved privately · waiting for both stations."))
         elif view["phase"] == "reply":
@@ -2480,7 +2571,8 @@ class ArcadeWindow(QMainWindow):
             if not pixmap.isNull(): plane.setPixmap(pixmap.scaled(32, 38, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
             box.addWidget(plane)
             box.addWidget(QLabel("Your fleet · private on this station"))
-            box.addWidget(grid_widget(own, marks=own_marks, fleet=session.get("private_fleet")))
+            box.addWidget(grid_widget(own, marks=own_marks, fleet=session.get("private_fleet")),
+                          0, Qt.AlignmentFlag.AlignHCenter)
 
             mode = QComboBox(); mode.addItem("One shot", "shot")
             seat = session["players"].index(self.settings.callsign) if self.settings.callsign in session["players"] else 0
@@ -2529,6 +2621,7 @@ class ArcadeWindow(QMainWindow):
             enemy_header.setStyleSheet("color: #f43f5e; font-size: 11px; font-weight: 800; letter-spacing: 1px;")
             box.addWidget(enemy_header)
             enemy = QWidget(); grid = QGridLayout(enemy); grid.setSpacing(2); grid.setContentsMargins(8, 8, 8, 8)
+            enemy.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             enemy.setStyleSheet("QWidget { background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #0a1b28, stop:0.7 #06121c, stop:1 #030a10); border: 1px solid rgba(0, 245, 196, 0.22); border-radius: 12px; }")
             _add_radar_coordinates(grid)
             for cell, value in enumerate(view["shots"]):
@@ -2546,7 +2639,7 @@ class ArcadeWindow(QMainWindow):
                     self._submit_action(bytes((code,)))
                 button.clicked.connect(fire); grid.addWidget(button, row + 1, col + 1); enemy_buttons.append(button)
             update_mode()
-            box.addWidget(enemy)
+            box.addWidget(enemy, 0, Qt.AlignmentFlag.AlignHCenter)
         self.board_layout.addWidget(host)
 
     def _render_scorched(self, session: dict, view: dict):
