@@ -15,7 +15,7 @@ from PySide6.QtCore import QObject, QPointF, QRectF, QRunnable, QSettings, QSize
 from PySide6.QtGui import QBrush, QColor, QFont, QLinearGradient, QPainter, QPainterPath, QRadialGradient, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QFormLayout, QFrame,
     QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMainWindow, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+    QMainWindow, QMessageBox, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
     QSlider, QSplitter, QStackedWidget, QStyle, QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget)
 
 from .presentation import CompletionTracker, scoreboard
@@ -61,6 +61,104 @@ def game_glyph(game_name: str) -> str:
         if k in key:
             return v
     return "◈"
+
+
+def _style_naval_button(button: QPushButton, value: int | str, enabled: bool = True):
+    button.setFixedSize(28, 28)
+    val = str(value).strip()
+    if val == "■":
+        button.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1a3c4d, stop:1 #0c202b);
+                color: #38bdf8;
+                border: 1px solid #38bdf8;
+                border-radius: 4px;
+                font-size: 13px;
+                font-weight: 900;
+            }
+        """)
+    elif val in ("✕", "×", "2"):
+        button.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4c0519, stop:1 #27030c);
+                color: #ff4757;
+                border: 1px solid #f43f5e;
+                border-radius: 4px;
+                font-size: 14px;
+                font-weight: 900;
+            }
+        """)
+    elif val in ("·", "1"):
+        button.setStyleSheet("""
+            QPushButton {
+                background: #07121d;
+                color: #5a7495;
+                border: 1px solid rgba(100, 160, 240, 0.14);
+                border-radius: 4px;
+                font-size: 18px;
+                font-weight: 900;
+            }
+        """)
+    elif val.startswith("S") or (isinstance(value, int) and value >= 3):
+        button.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #451a03, stop:1 #220d01);
+                color: #fbbf24;
+                border: 1px solid #f59e0b;
+                border-radius: 4px;
+                font-size: 10px;
+                font-weight: 800;
+            }
+        """)
+    elif enabled:
+        button.setStyleSheet("""
+            QPushButton {
+                background: #0a1926;
+                color: #1e3d54;
+                border: 1px solid rgba(0, 245, 196, 0.18);
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background: #11384e;
+                border: 1px solid #00f5c4;
+                color: #00f5c4;
+            }
+            QPushButton:pressed {
+                background: #00f5c4;
+                color: #02201d;
+            }
+        """)
+    else:
+        button.setStyleSheet("""
+            QPushButton {
+                background: #06111b;
+                color: #152738;
+                border: 1px solid rgba(255, 255, 255, 0.04);
+                border-radius: 4px;
+                font-size: 11px;
+            }
+        """)
+
+
+def _add_radar_coordinates(grid: QGridLayout):
+    corner = QLabel("⌖")
+    corner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    corner.setStyleSheet("color: #00f5c4; font-size: 11px; font-weight: 800;")
+    grid.addWidget(corner, 0, 0)
+    for c in range(10):
+        lbl = QLabel(chr(65 + c))
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setFixedSize(28, 16)
+        lbl.setStyleSheet("color: #486581; font-size: 9px; font-weight: 800; font-family: monospace;")
+        grid.addWidget(lbl, 0, c + 1)
+    for r in range(10):
+        lbl = QLabel(str(r + 1))
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setFixedSize(16, 28)
+        lbl.setStyleSheet("color: #486581; font-size: 9px; font-weight: 800; font-family: monospace;")
+        grid.addWidget(lbl, r + 1, 0)
 
 
 class SessionListCard(QWidget):
@@ -234,7 +332,7 @@ class ScorchedBattlefield(QWidget):
         view = self.view
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor("#121a26"))
+        painter.fillRect(self.rect(), QColor("#060b13"))
         margin = 12
         world_width, world_height = view["width"], view["sky_height"]
         scale = min((self.width() - 2 * margin) / world_width, (self.height() - 2 * margin) / world_height)
@@ -243,27 +341,34 @@ class ScorchedBattlefield(QWidget):
         painter.translate(ox, oy)
         painter.scale(scale, scale)
         sky = QLinearGradient(0, 0, 0, world_height)
-        sky.setColorAt(0, QColor("#091525")); sky.setColorAt(1, QColor("#28445b"))
+        sky.setColorAt(0, QColor("#040810")); sky.setColorAt(0.4, QColor("#081425")); sky.setColorAt(0.75, QColor("#10243a")); sky.setColorAt(1, QColor("#183852"))
         painter.fillRect(0, 0, world_width, world_height, QBrush(sky))
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(132, 173, 188, 28))
+        painter.setBrush(QColor(80, 130, 170, 30))
         distant = QPolygonF([QPointF(0, world_height)] +
-                            [QPointF(x, world_height - 9 + ((x * 13 + 7) % 9) / 3) for x in range(world_width + 1)] +
+                            [QPointF(x, world_height - 11 + ((x * 13 + 7) % 9) / 3) for x in range(world_width + 1)] +
                             [QPointF(world_width, world_height), QPointF(0, world_height)])
         painter.drawPolygon(distant)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(217, 232, 251, 95))
+        painter.setBrush(QColor(50, 90, 130, 42))
+        mid = QPolygonF([QPointF(0, world_height)] +
+                        [QPointF(x, world_height - 6 + ((x * 17 + 11) % 7) / 2.5) for x in range(world_width + 1)] +
+                        [QPointF(world_width, world_height), QPointF(0, world_height)])
+        painter.drawPolygon(mid)
         for i in range(46):
+            star_color = QColor(167, 243, 208, 140) if i % 7 == 0 else QColor(254, 240, 138, 120) if i % 5 == 0 else QColor(217, 232, 251, 95)
+            painter.setBrush(star_color)
+            size = .045 if i % 5 else .08
             painter.drawEllipse(QPointF(((i * 187 + 43) % (world_width * 24)) / 24,
-                                        ((i * 79 + 17) % (world_height * 12)) / 24), .035 if i % 5 else .07,
-                                .035 if i % 5 else .07)
+                                        ((i * 79 + 17) % (world_height * 12)) / 24), size, size)
         terrain = QPolygonF([QPointF(0, world_height)] +
                             [QPointF(x + .5, world_height - height) for x, height in enumerate(self.displayed_terrain())] +
                             [QPointF(world_width, world_height)])
         earth = QLinearGradient(0, world_height - 15, 0, world_height)
-        earth.setColorAt(0, QColor("#62825c")); earth.setColorAt(1, QColor("#293b35"))
+        earth.setColorAt(0, QColor("#1e3f34"))
+        earth.setColorAt(0.5, QColor("#122620"))
+        earth.setColorAt(1, QColor("#08120f"))
         painter.setBrush(QBrush(earth))
-        painter.setPen(QPen(QColor("#91bd89"), .11))
+        painter.setPen(QPen(QColor("#00f5c4"), .14))
         painter.drawPolygon(terrain)
         def draw_path(points, color, dotted=False):
             if len(points) < 2:
@@ -271,9 +376,15 @@ class ScorchedBattlefield(QWidget):
             path = QPainterPath(QPointF(points[0][0], world_height - points[0][1]))
             for x, y in points[1:]:
                 path.lineTo(x, world_height - y)
-            pen = QPen(QColor(color), .09 if dotted else .12)
             if dotted:
+                glow_pen = QPen(QColor(0, 245, 196, 45), .24)
+                painter.setPen(glow_pen); painter.setBrush(Qt.BrushStyle.NoBrush); painter.drawPath(path)
+                pen = QPen(QColor("#00f5c4"), .10)
                 pen.setStyle(Qt.PenStyle.DashLine)
+            else:
+                glow_pen = QPen(QColor(255, 180, 80, 60), .26)
+                painter.setPen(glow_pen); painter.setBrush(Qt.BrushStyle.NoBrush); painter.drawPath(path)
+                pen = QPen(QColor(color), .13)
             painter.setPen(pen); painter.setBrush(Qt.BrushStyle.NoBrush); painter.drawPath(path)
         trajectory = view.get("trajectory", [])
         if self.flight_progress < 1 and trajectory:
@@ -283,11 +394,14 @@ class ScorchedBattlefield(QWidget):
             start = trajectory[index]; end = trajectory[index + 1]
             location = (start[0] + (end[0] - start[0]) * fraction,
                         start[1] + (end[1] - start[1]) * fraction)
-            draw_path(trajectory[:index + 1] + [location], "#ffdb8c")
-            painter.setPen(QPen(QColor("#ffb55d"), .23))
-            painter.setBrush(QColor("#fff5c1"))
-            painter.drawEllipse(QPointF(location[0], world_height - location[1]), .18, .18)
-        draw_path([(x / 1000, y / 1000) for x, y in self.preview], "#dceeff", True)
+            draw_path(trajectory[:index + 1] + [location], "#ffb84d")
+            halo = QRadialGradient(QPointF(location[0], world_height - location[1]), .55)
+            halo.setColorAt(0, QColor(255, 255, 220, 240))
+            halo.setColorAt(0.4, QColor(255, 170, 50, 180))
+            halo.setColorAt(1, QColor(255, 60, 20, 0))
+            painter.setPen(Qt.PenStyle.NoPen); painter.setBrush(QBrush(halo))
+            painter.drawEllipse(QPointF(location[0], world_height - location[1]), .55, .55)
+        draw_path([(x / 1000, y / 1000) for x, y in self.preview], "#00f5c4", True)
         impact = view.get("impact")
         if impact and impact["kind"] != "edge" and self.flight_progress >= 1:
             cx, cy = impact["x"], world_height - impact["y"]
@@ -342,11 +456,15 @@ class ScorchedBattlefield(QWidget):
             if self._flight_timer.isActive() and self.flight_progress >= 1 and view.get("last_damage", [0, 0])[index]:
                 x += .12 * sin(time.monotonic() * 45)
             if tank["shielded"]:
-                painter.setPen(QPen(QColor("#74d9fb"), .12))
-                painter.setBrush(QColor(91, 197, 241, 35))
-                painter.drawEllipse(QPointF(x, y), 1.0, .8)
+                painter.setPen(QPen(QColor("#00f5c4"), .14))
+                shield_glow = QRadialGradient(QPointF(x, y), 1.2)
+                shield_glow.setColorAt(0, QColor(0, 245, 196, 15))
+                shield_glow.setColorAt(0.7, QColor(0, 245, 196, 50))
+                shield_glow.setColorAt(1, QColor(0, 245, 196, 0))
+                painter.setBrush(QBrush(shield_glow))
+                painter.drawEllipse(QPointF(x, y), 1.2, .95)
             painter.setPen(QPen(QColor("#142333"), .11))
-            painter.setBrush(QColor("#76e5c8" if index == 0 else "#f3b476"))
+            painter.setBrush(QColor("#00f5c4" if index == 0 else "#fbbf24"))
             if not self.sprites[index].isNull():
                 painter.drawPixmap(QRectF(x - 1.05, y - .96, 2.1, 1.45), self.sprites[index],
                                    QRectF(self.sprites[index].rect()))
@@ -361,6 +479,15 @@ class ScorchedBattlefield(QWidget):
             theta = angle * 3.1415926535 / 180
             painter.drawLine(QPointF(barrel_x, barrel_y),
                              QPointF(barrel_x + direction * 1.0 * cos(theta), barrel_y - 1.0 * sin(theta)))
+            hp = tank["hp"]
+            hp_ratio = max(0.0, min(1.0, hp / 100.0))
+            bar_w = 2.4; bar_h = .28; bar_x = x - bar_w / 2; bar_y = y - 1.6
+            painter.setPen(QPen(QColor(15, 23, 42, 200), .06))
+            painter.setBrush(QColor(10, 15, 25, 220))
+            painter.drawRoundedRect(QRectF(bar_x, bar_y, bar_w, bar_h), .06, .06)
+            fill_color = QColor("#00f5c4") if hp > 45 else QColor("#fbbf24") if hp > 20 else QColor("#f43f5e")
+            painter.setPen(Qt.PenStyle.NoPen); painter.setBrush(fill_color)
+            painter.drawRoundedRect(QRectF(bar_x + .03, bar_y + .03, max(.1, (bar_w - .06) * hp_ratio), bar_h - .06), .04, .04)
             painter.setPen(QColor("#ffffff"))
             painter.setFont(QFont("Sans Serif", 7))
             painter.save(); painter.scale(1 / scale, 1 / scale)
@@ -1088,9 +1215,63 @@ class ArcadeWindow(QMainWindow):
             QListWidget { background:transparent; border:0; outline:0; }
             QScrollArea#toolsScroll, QWidget#toolsViewport, QScrollArea#boardScroll, QWidget#boardViewport,
             QWidget#toolsContent, QWidget#boardHost { background:transparent; border:0; }
-            QWidget#scorchedHost, QWidget#scorchedMapColumn, QWidget#scorchedControls,
+            QWidget#scorchedHost, QWidget#scorchedMapColumn,
             QWidget#scorchedViewport, QWidget#scorchedControlsViewport,
-            QScrollArea#battlefieldScroll, QScrollArea#scorchedControlsScroll { background:#111a28; border:0; }
+            QScrollArea#battlefieldScroll, QScrollArea#scorchedControlsScroll { background:#090f18; border:0; }
+            QWidget#scorchedControls { background:#0c1522; border:1px solid rgba(100,160,240,0.14); border-radius:14px; }
+            QSlider#scorchedAngle::groove:horizontal, QSlider#scorchedPower::groove:horizontal {
+                height: 6px;
+                background: #060b13;
+                border: 1px solid #1e2c3e;
+                border-radius: 3px;
+            }
+            QSlider#scorchedAngle::sub-page:horizontal, QSlider#scorchedPower::sub-page:horizontal {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #00f5c4);
+                border-radius: 3px;
+            }
+            QSlider#scorchedAngle::handle:horizontal, QSlider#scorchedPower::handle:horizontal {
+                background: #ffffff;
+                border: 2px solid #00f5c4;
+                width: 14px;
+                margin-top: -5px;
+                margin-bottom: -5px;
+                border-radius: 7px;
+            }
+            QSlider#scorchedAngle::handle:horizontal:hover, QSlider#scorchedPower::handle:horizontal:hover {
+                background: #00f5c4;
+                border: 2px solid #ffffff;
+            }
+            QPushButton#scorchedFire {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #e11d48, stop:1 #f43f5e);
+                color: #ffffff;
+                font-size: 13px;
+                font-weight: 800;
+                border: 1px solid #fda4af;
+                border-radius: 10px;
+                padding: 10px 14px;
+                letter-spacing: 0.5px;
+            }
+            QPushButton#scorchedFire:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #f43f5e, stop:1 #fb7185);
+                border-color: #ffffff;
+            }
+            QPushButton#scorchedFire:disabled {
+                background: #18121a;
+                color: #4b3644;
+                border-color: #271a23;
+            }
+            QPushButton#scorchedReplay {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #132235, stop:1 #1e334d);
+                color: #38bdf8;
+                border: 1px solid rgba(56, 189, 248, 0.4);
+                border-radius: 8px;
+                font-weight: 700;
+                padding: 7px 12px;
+            }
+            QPushButton#scorchedReplay:hover {
+                background: #38bdf8;
+                color: #0c1825;
+            }
             QListWidget::item { padding:10px 10px; margin:2px 0; border-radius:9px; color:#abb8ca; }
             QListWidget::item:selected { background:#162c3e; color:#7dd3fc; }
             QListWidget::item:hover { background:#141f2e; }
@@ -1801,10 +1982,18 @@ class ArcadeWindow(QMainWindow):
             from .games.hexxagon import pack_move
             from PySide6.QtCore import QPoint
             from PySide6.QtGui import QPolygon, QRegion
-            host = QWidget(); box = QVBoxLayout(host)
-            hint = QLabel("Select your stone, then a highlighted hex. Solid = clone · dotted = jump.")
+            host = QWidget(); box = QVBoxLayout(host); box.setSpacing(10)
+            hint = QLabel("✦ Select your stone, then a highlighted hex. Solid = clone · dotted = jump.")
+            hint.setStyleSheet("background: rgba(0, 245, 196, 0.05); border: 1px solid rgba(0, 245, 196, 0.18); border-radius: 9px; padding: 8px 12px; color: #94a3b8; font-size: 11px;")
             hint.setWordWrap(True); box.addWidget(hint)
             board = QWidget(); board.setFixedSize(350, 310)
+            board.setStyleSheet("""
+                QWidget {
+                    background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #101c2e, stop:0.8 #08111b, stop:1 #04080e);
+                    border: 1px solid rgba(100, 160, 240, 0.18);
+                    border-radius: 18px;
+                }
+            """)
             enabled = (not self.settings.observer_mode and session["status"] == "active" and not session["pending_action"] and not session.get("resync_pending")
                        and (self.settings.transport == "practice" or (self.settings.tx_enabled and session["current_player"] == self.settings.callsign)))
             buttons, selected = {}, [None]
@@ -1813,10 +2002,18 @@ class ArcadeWindow(QMainWindow):
                 for cell in view["cells"]:
                     i, owner = cell["id"], cell["owner"]
                     target = (selected[0], i) in legal
-                    color = "#68daca" if owner == 1 else "#b39bfa" if owner == 2 else "#263c50"
-                    border = "#ffe295" if target or i == selected[0] else "#496276"
-                    style = "dotted" if target and len(pack_move(selected[0], i)) == 2 else "solid"
-                    buttons[i].setStyleSheet(f"background:{color};color:{'#0a1624' if owner else '#c8dce9'};border:2px {style} {border};font-weight:bold;font-size:10px;padding:0;")
+                    color = "#00f5c4" if owner == 1 else "#c084fc" if owner == 2 else "#0f1a28"
+                    text_color = "#02201d" if owner == 1 else "#1e0838" if owner == 2 else "#475e77"
+                    if i == selected[0]:
+                        border = "#ffffff"; style = "solid"
+                    elif target:
+                        is_jump = len(pack_move(selected[0], i)) == 2
+                        border = "#fbbf24" if is_jump else "#00f5c4"
+                        style = "dotted" if is_jump else "solid"
+                    else:
+                        border = "#1e324a" if owner == 0 else ("#34d399" if owner == 1 else "#a855f7")
+                        style = "solid"
+                    buttons[i].setStyleSheet(f"background:{color};color:{text_color};border:2px {style} {border};font-weight:900;font-size:10px;padding:0;")
             def choose(i):
                 if (selected[0], i) in legal:
                     self._submit_action(pack_move(selected[0], i)); return
@@ -1900,16 +2097,25 @@ class ArcadeWindow(QMainWindow):
             self.board_layout.addWidget(host)
         elif view["kind"] == "battleship":
             from .games.battleship import FLEET
-            host = QWidget(); box = QVBoxLayout(host)
+            host = QWidget(); box = QVBoxLayout(host); box.setSpacing(10)
             active = not self.settings.observer_mode and session["status"] == "active" and not session["pending_action"] and not session.get("resync_pending") and (self.settings.transport == "practice" or (self.settings.tx_enabled and session["current_player"] == self.settings.callsign))
-            box.addWidget(QLabel(f"{session['current_player']} · {view['phase']}"))
+            phase_pill = QLabel(f"◈ {session['current_player']}  ·  {view['phase'].upper()}")
+            phase_pill.setStyleSheet("background: rgba(0, 245, 196, 0.08); border: 1px solid rgba(0, 245, 196, 0.25); border-radius: 8px; padding: 6px 12px; color: #00f5c4; font-size: 11px; font-weight: 800; letter-spacing: 1px;")
+            box.addWidget(phase_pill)
             if view["phase"] == "setup" and not session.get("private_fleet"):
                 draft = self._battleship_drafts.setdefault(session["id"], [])
                 vertical = QCheckBox("Place vertically")
-                box.addWidget(QLabel(f"Place ship {len(draft)+1} of 5 · length {FLEET[len(draft)]}")); box.addWidget(vertical)
-                board = QWidget(); grid = QGridLayout(board); grid.setSpacing(2)
+                vertical.setStyleSheet("color: #cbd5e1; font-size: 12px; font-weight: 600;")
+                prompt = QLabel(f"Place vessel {len(draft)+1} of 5 · length {FLEET[len(draft)]}")
+                prompt.setStyleSheet("color: #38bdf8; font-size: 12px; font-weight: 700;")
+                box.addWidget(prompt); box.addWidget(vertical)
+                board = QWidget(); grid = QGridLayout(board); grid.setSpacing(2); grid.setContentsMargins(8, 8, 8, 8)
+                board.setStyleSheet("QWidget { background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #0a1b28, stop:0.7 #06121c, stop:1 #030a10); border: 1px solid rgba(0, 245, 196, 0.22); border-radius: 12px; }")
+                _add_radar_coordinates(grid)
                 for i in range(100):
-                    button = QPushButton("■" if i in sum(draft, []) else "□"); button.setFixedSize(28, 28)
+                    val = "■" if i in sum(draft, []) else "□"
+                    button = QPushButton(val)
+                    _style_naval_button(button, val, enabled=True)
                     def place(_checked=False, cell=i):
                         size=FLEET[len(draft)]; row,col=divmod(cell,10); vert=vertical.isChecked()
                         cells=[(row+j)*10+col if vert else row*10+col+j for j in range(size)]
@@ -1919,46 +2125,100 @@ class ArcadeWindow(QMainWindow):
                             self.engine.place_battleship_fleet(session["id"], draft); self._battleship_drafts.pop(session["id"], None)
                         self._board_signature = None
                         self._refresh_sessions()
-                    button.clicked.connect(place); grid.addWidget(button,i//10,i%10)
+                    button.clicked.connect(place); grid.addWidget(button, (i//10) + 1, (i%10) + 1)
                 box.addWidget(board)
-            elif view["phase"] == "setup": box.addWidget(QLabel("Fleet saved privately · waiting for both stations"))
-            elif view["phase"] == "reply": box.addWidget(QLabel("Sending the result from your private fleet."))
+            elif view["phase"] == "setup":
+                msg = QLabel("Fleet saved privately · waiting for both stations")
+                msg.setStyleSheet("color: #94a3b8; font-size: 12px; padding: 10px 0;")
+                box.addWidget(msg)
+            elif view["phase"] == "reply":
+                msg = QLabel("Sending the result from your private fleet.")
+                msg.setStyleSheet("color: #94a3b8; font-size: 12px; padding: 10px 0;")
+                box.addWidget(msg)
             else:
                 if session.get("private_fleet"):
-                    own=QWidget(); own_grid=QGridLayout(own); own_cells=set(sum(session["private_fleet"], []))
-                    for i in range(100): own_grid.addWidget(QLabel("■" if i in own_cells else "□"),i//10,i%10)
-                    box.addWidget(QLabel("Your fleet · private on this station")); box.addWidget(own)
-                board=QWidget(); grid=QGridLayout(board); grid.setSpacing(2)
-                for i,value in enumerate(view["shots"]):
-                    button=QPushButton("·" if value==1 else "✕" if value==2 else f"S{value-3}" if value>=3 else "□");button.setFixedSize(28,28)
-                    button.setEnabled(active and value==0);button.clicked.connect(lambda _=False,cell=i:self._submit_action(bytes((cell,))))
-                    grid.addWidget(button,i//10,i%10)
-                box.addWidget(QLabel("Enemy waters · called coordinates"));box.addWidget(board)
+                    own_header = QLabel("YOUR HARBOR · PRIVATE ON THIS STATION")
+                    own_header.setStyleSheet("color: #38bdf8; font-size: 11px; font-weight: 800; letter-spacing: 1px;")
+                    box.addWidget(own_header)
+                    own = QWidget(); own_grid = QGridLayout(own); own_grid.setSpacing(2); own_grid.setContentsMargins(6, 6, 6, 6)
+                    own.setStyleSheet("QWidget { background: #07121b; border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 10px; }")
+                    _add_radar_coordinates(own_grid)
+                    own_cells = set(sum(session["private_fleet"], []))
+                    for i in range(100):
+                        lbl = QLabel("■" if i in own_cells else "□")
+                        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                        lbl.setFixedSize(28, 28)
+                        if i in own_cells:
+                            lbl.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1a3c4d, stop:1 #0c202b); color: #38bdf8; border: 1px solid #38bdf8; border-radius: 4px; font-weight: 900; font-size: 13px;")
+                        else:
+                            lbl.setStyleSheet("background: #06111b; color: #152738; border: 1px solid rgba(255, 255, 255, 0.04); border-radius: 4px; font-size: 11px;")
+                        own_grid.addWidget(lbl, (i//10) + 1, (i%10) + 1)
+                    box.addWidget(own)
+                enemy_header = QLabel("ENEMY WATERS · CALLED COORDINATES")
+                enemy_header.setStyleSheet("color: #f43f5e; font-size: 11px; font-weight: 800; letter-spacing: 1px;")
+                box.addWidget(enemy_header)
+                board = QWidget(); grid = QGridLayout(board); grid.setSpacing(2); grid.setContentsMargins(8, 8, 8, 8)
+                board.setStyleSheet("QWidget { background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #0a1b28, stop:0.7 #06121c, stop:1 #030a10); border: 1px solid rgba(0, 245, 196, 0.22); border-radius: 12px; }")
+                _add_radar_coordinates(grid)
+                for i, value in enumerate(view["shots"]):
+                    txt = "·" if value==1 else "✕" if value==2 else f"S{value-3}" if value>=3 else "□"
+                    button = QPushButton(txt)
+                    _style_naval_button(button, value if value else txt, enabled=bool(active and value==0))
+                    button.setEnabled(active and value==0); button.clicked.connect(lambda _=False, cell=i: self._submit_action(bytes((cell,))))
+                    grid.addWidget(button, (i//10) + 1, (i%10) + 1)
+                box.addWidget(board)
             self.board_layout.addWidget(host)
         elif view["kind"] == "sea-warfare":
             self._render_sea_warfare(session, view)
         elif view["kind"] == "signal-siege":
             from .games.signal_siege import pack_play, pack_draft
-            host = QWidget(); box = QVBoxLayout(host); box.setSpacing(14)
-            title = QLabel(f"SIGNAL SIEGE   ·   WAVE {view['wave']}/3   ·   CORE {view['boss_hp']}/{view['boss_max_hp']} HP")
-            title.setStyleSheet("color:#e5b9ff;font-size:20px;font-weight:800")
+            host = QWidget(); box = QVBoxLayout(host); box.setSpacing(12)
+            title = QLabel(f"SIGNAL SIEGE   ·   WAVE {view['wave']}/3")
+            title.setStyleSheet("color:#e5b9ff;font-size:18px;font-weight:800;letter-spacing:1px")
             box.addWidget(title)
-            box.addWidget(QLabel(f"Interference pulse: {view['pulse_damage']} per station · in {view['rounds_until_pulse']} round(s) · Jam {view['jam']}"))
+            
+            boss_frame = QWidget()
+            boss_layout = QVBoxLayout(boss_frame); boss_layout.setContentsMargins(12, 10, 12, 10); boss_layout.setSpacing(6)
+            boss_frame.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #250938, stop:1 #13041d); border: 1px solid #a855f7; border-radius: 12px;")
+            boss_label = QLabel(f"◈ CORE BOSS   ·   {view['boss_hp']} / {view['boss_max_hp']} HP")
+            boss_label.setStyleSheet("color: #f5d0fe; font-size: 12px; font-weight: 800; letter-spacing: 0.8px;")
+            boss_layout.addWidget(boss_label)
+            
+            hp_bar = QProgressBar()
+            hp_bar.setRange(0, view['boss_max_hp'])
+            hp_bar.setValue(view['boss_hp'])
+            hp_bar.setTextVisible(False)
+            hp_bar.setFixedHeight(8)
+            hp_bar.setStyleSheet("QProgressBar { background: #0c0413; border: none; border-radius: 4px; } QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #d946ef, stop:1 #f43f5e); border-radius: 4px; }")
+            boss_layout.addWidget(hp_bar)
+            
+            pulse_lbl = QLabel(f"⚡ Pulse: {view['pulse_damage']} dmg · in {view['rounds_until_pulse']} round(s) · Jam {view['jam']}")
+            pulse_lbl.setStyleSheet("color: #cbd5e1; font-size: 11px; font-weight: 600;")
+            boss_layout.addWidget(pulse_lbl)
+            box.addWidget(boss_frame)
             actor_call = session["current_player"] if self.settings.transport == "practice" else self.settings.callsign
             active = not self.settings.observer_mode and session["status"] == "active" and not session["pending_action"] and not session.get("resync_pending") and (self.settings.transport == "practice" or (self.settings.tx_enabled and actor_call == session["current_player"]))
             for station in view["stations"]:
                 is_mine = not self.settings.observer_mode and station["callsign"] == actor_call
-                description = (f"{station['callsign']}    ♥ {station['hp']}/18     ◈ {station['shield']} shield     ✦ {station['focus']} focus     "
-                               f"▤ {station['deck_size']} cards" + ("   YOUR HAND" if is_mine else "   ▤ ▤ ▤"))
-                row = QLabel(description); row.setStyleSheet("color:#aee7d7;font-size:12px" if is_mine else "color:#a9b8ce;font-size:12px")
-                box.addWidget(row)
+                st_card = QWidget()
+                st_layout = QHBoxLayout(st_card); st_layout.setContentsMargins(10, 6, 10, 6)
+                if is_mine:
+                    st_card.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #062b24, stop:1 #0a1f1e); border: 1px solid #00f5c4; border-radius: 8px;")
+                else:
+                    st_card.setStyleSheet("background: #0d1522; border: 1px solid #1e2c3e; border-radius: 8px;")
+                desc = (f"{station['callsign']}    ♥ {station['hp']}/18     ◈ {station['shield']} shield     ✦ {station['focus']} focus     "
+                        f"▤ {station['deck_size']} cards" + ("   [YOUR HAND]" if is_mine else "   ▤ ▤ ▤"))
+                row = QLabel(desc)
+                row.setStyleSheet("color:#00f5c4;font-size:11px;font-weight:700" if is_mine else "color:#94a3b8;font-size:11px")
+                st_layout.addWidget(row)
+                box.addWidget(st_card)
             if view["phase"] == "draft":
                 box.addWidget(QLabel(f"{session['current_player']} chooses one upgrade for their deck:"))
                 row = QHBoxLayout()
                 for reward in view["rewards"]:
                     button = QPushButton(f"{reward['name']}\n{reward['description']}\nADD TO DECK +")
                     button.setMinimumSize(150, 115); button.setEnabled(active)
-                    button.setStyleSheet("font-size:13px;font-weight:700;color:#f0e5ff;background:#302a4a;border:1px solid #8c79bf;border-radius:12px")
+                    button.setStyleSheet("font-size:12px;font-weight:700;color:#f5d0fe;background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #271638,stop:1 #150c20);border:1px solid #a855f7;border-radius:12px;padding:8px;")
                     button.clicked.connect(lambda _checked=False, i=reward["slot"]: self._submit_action(pack_draft(i)))
                     row.addWidget(button)
                 box.addLayout(row)
@@ -1974,24 +2234,36 @@ class ArcadeWindow(QMainWindow):
                     for card in station["hand"]:
                         button = QPushButton(f"{card['name']}\n{card['description']}\nPLAY CARD →")
                         button.setMinimumSize(150, 125); button.setEnabled(active)
-                        button.setStyleSheet("font-size:13px;font-weight:700;color:#dbf7ee;background:#194043;border:1px solid #428b81;border-radius:12px")
+                        button.setStyleSheet("font-size:12px;font-weight:700;color:#e2e8f0;background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #1a273c,stop:1 #0e1724);border:1px solid rgba(0,245,196,0.35);border-radius:12px;padding:8px;")
                         button.clicked.connect(lambda _checked=False, i=card["slot"]: self._submit_action(pack_play(i, chooser.currentData())))
                         row.addWidget(button)
                     box.addLayout(row)
                 else:
                     box.addWidget(QLabel("Waiting for another station. Their hand remains face down."))
             else:
-                box.addWidget(QLabel(f"MISSION {view['result'].upper()}"))
+                res_lbl = QLabel(f"MISSION {view['result'].upper()}")
+                res_lbl.setStyleSheet("color: #00f5c4; font-size: 18px; font-weight: 800;")
+                box.addWidget(res_lbl)
             self.board_layout.addWidget(host)
         elif view["kind"] == "piles":
-            host = QWidget(); box = QVBoxLayout(host)
+            host = QWidget(); box = QVBoxLayout(host); box.setSpacing(12)
+            piles_card = QWidget()
+            piles_card.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #111a28, stop:1 #080f19); border: 1px solid rgba(100, 160, 240, 0.16); border-radius: 16px; padding: 14px;")
+            card_layout = QVBoxLayout(piles_card); card_layout.setSpacing(10)
             for index, count in enumerate(view["piles"]):
-                row = QHBoxLayout(); label = QLabel(f"PILE {index+1:02d}"); label.setObjectName("eyebrow")
-                row.addWidget(label); row.addStretch(1)
+                row = QHBoxLayout(); label = QLabel(f"PILE {index+1:02d}")
+                label.setStyleSheet("color: #38bdf8; font-size: 11px; font-weight: 800; letter-spacing: 1.5px;")
+                row.addWidget(label); row.addSpacing(16)
                 for _ in range(count):
-                    pebble = QLabel("◆"); pebble.setStyleSheet("color:#eeeeee;font-size:20px" if self.settings.color_scheme == "monochrome" else "color:#66d9c2;font-size:20px")
+                    pebble = QLabel("◆")
+                    pebble.setStyleSheet("color: #00f5c4; font-size: 22px;" if self.settings.color_scheme != "monochrome" else "color: #eeeeee; font-size: 22px;")
                     row.addWidget(pebble)
-                row.addWidget(QLabel(str(count))); box.addLayout(row)
+                row.addStretch(1)
+                cnt_badge = QLabel(str(count))
+                cnt_badge.setStyleSheet("color: #94a3b8; font-size: 12px; font-weight: 700; background: #0f1926; border: 1px solid #1e2c3e; border-radius: 6px; padding: 2px 8px;")
+                row.addWidget(cnt_badge)
+                card_layout.addLayout(row)
+            box.addWidget(piles_card)
             controls = QHBoxLayout(); pile = QComboBox(); amount = QSpinBox()
             for i, count in enumerate(view["piles"]):
                 pile.addItem(f"Pile {i+1} · {count} remaining", i)
@@ -2009,15 +2281,23 @@ class ArcadeWindow(QMainWindow):
             controls.addWidget(pile); controls.addWidget(amount); controls.addWidget(take); box.addLayout(controls)
             self.board_layout.addWidget(host)
         elif view["kind"] == "word-tiles":
-            host = QWidget(); box = QVBoxLayout(host); box.setContentsMargins(0, 0, 0, 0)
+            host = QWidget(); box = QVBoxLayout(host); box.setContentsMargins(0, 0, 0, 0); box.setSpacing(8)
             current = session["current_player"]
-            box.addWidget(QLabel(f"BAG {view['bag']}     {view['lexicon']} · OPEN RACKS"))
-            grid_host = QWidget(); grid = QGridLayout(grid_host); grid.setSpacing(2); grid.setContentsMargins(0, 4, 0, 4)
+            header_bar = QLabel(f"BAG {view['bag']}  ·  {view['lexicon'].upper()}  ·  OPEN RACKS")
+            header_bar.setStyleSheet("background: rgba(0, 245, 196, 0.06); border: 1px solid rgba(0, 245, 196, 0.18); border-radius: 8px; padding: 6px 12px; color: #00f5c4; font-size: 11px; font-weight: 800; letter-spacing: 1px;")
+            box.addWidget(header_bar)
+            grid_host = QWidget(); grid = QGridLayout(grid_host); grid.setSpacing(2); grid.setContentsMargins(6, 6, 6, 6)
+            grid_host.setStyleSheet("background: #070d16; border: 1px solid rgba(100, 160, 240, 0.18); border-radius: 12px;")
             grid.addWidget(QLabel("   "), 0, 0)
-            for x in range(15): grid.addWidget(QLabel(chr(65 + x)), 0, x + 1, alignment=Qt.AlignmentFlag.AlignCenter)
-            premium_colors = {"TW": "#6e3341", "DW": "#684d52", "TL": "#315971", "DL": "#38525d", "..": "#263746"}
+            for x in range(15):
+                lbl = QLabel(chr(65 + x))
+                lbl.setStyleSheet("color: #486581; font-size: 9px; font-weight: 800; font-family: monospace;")
+                grid.addWidget(lbl, 0, x + 1, alignment=Qt.AlignmentFlag.AlignCenter)
+            premium_colors = {"TW": "#7f1d1d", "DW": "#831843", "TL": "#0369a1", "DL": "#0284c7", "..": "#0d1726"}
             for y in range(15):
-                grid.addWidget(QLabel(str(y + 1)), y + 1, 0, alignment=Qt.AlignmentFlag.AlignCenter)
+                row_lbl = QLabel(str(y + 1))
+                row_lbl.setStyleSheet("color: #486581; font-size: 9px; font-weight: 800; font-family: monospace;")
+                grid.addWidget(row_lbl, y + 1, 0, alignment=Qt.AlignmentFlag.AlignCenter)
                 for x in range(15):
                     index = y * 15 + x
                     tile = view["cells"][index]
@@ -2025,16 +2305,19 @@ class ArcadeWindow(QMainWindow):
                     button = QPushButton(text)
                     button.setObjectName(f"wordCell{index}")
                     button.setFixedSize(28, 27)
-                    color = "#eeeeee" if tile else ("#343a40" if self.settings.color_scheme == "monochrome" else premium_colors[view["premiums"][index]])
-                    foreground = "#111111" if tile else ("#eeeeee" if self.settings.color_scheme == "monochrome" else "#d8e3ed")
-                    button.setStyleSheet(f"QPushButton {{ padding:0; font-size:10px; font-weight:700; background:{color}; color:{foreground}; border:1px solid #182635; }}")
-                    # Clicking a square chooses the start coordinate; this is
-                    # local UI selection and never transmits a move.
+                    if tile:
+                        button.setStyleSheet("QPushButton { padding:0; font-size:12px; font-weight:800; background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #fef9c3, stop:1 #fde047); color: #0f172a; border: 1px solid #ca8a04; border-radius: 4px; }")
+                    else:
+                        color = "#343a40" if self.settings.color_scheme == "monochrome" else premium_colors[view["premiums"][index]]
+                        foreground = "#eeeeee" if self.settings.color_scheme == "monochrome" else "#94a3b8" if view["premiums"][index] == ".." else "#ffffff"
+                        button.setStyleSheet(f"QPushButton {{ padding:0; font-size:9px; font-weight:700; background:{color}; color:{foreground}; border:1px solid rgba(255, 255, 255, 0.08); border-radius:3px; }} QPushButton:hover {{ border-color: #00f5c4; }}")
                     button.clicked.connect(lambda _checked=False, x=x, y=y: start.setText(f"{chr(65 + x)}{y + 1}"))
                     grid.addWidget(button, y + 1, x + 1)
             box.addWidget(grid_host, alignment=Qt.AlignmentFlag.AlignHCenter)
             for player, rack in view["racks"].items():
-                box.addWidget(QLabel(f"{player} RACK  " + "  ".join(rack)))
+                rack_card = QLabel(f"◈ {player} RACK   " + "   ".join(rack))
+                rack_card.setStyleSheet("color: #7dd3fc; font-weight: 700; font-size: 11px; background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 6px; padding: 6px 12px;")
+                box.addWidget(rack_card)
             enabled = not self.settings.observer_mode and (self.settings.transport == "practice" or self.settings.tx_enabled) and (self.settings.transport == "practice" or current == self.settings.callsign) and session["status"] == "active" and not session["pending_action"] and not session.get("resync_pending")
             form = QHBoxLayout(); start = QLineEdit(); start.setObjectName("wordStart"); start.setPlaceholderText("H8")
             direction = QComboBox(); direction.setObjectName("wordDirection"); direction.addItem("Across", "H"); direction.addItem("Down", "V")
@@ -2067,25 +2350,32 @@ class ArcadeWindow(QMainWindow):
                   and not session["pending_action"] and not session.get("resync_pending")
                   and (self.settings.transport == "practice" or
                        (self.settings.tx_enabled and session["current_player"] == self.settings.callsign)))
-        rules = QLabel("Carrier fighter: one 50% block roll · Battleship: one adjacent double shot · "
-                       "Cruiser: one free move · Destroyer: disarms one mine · "
-                       "Submarine: one sonar row · Patrol boat: optional hidden mine")
+        rules = QLabel("⚓ CARRIER: 50% block roll  ·  BATTLESHIP: adjacent double shot\n"
+                       "⚓ CRUISER: one free move  ·  DESTROYER: disarms one mine\n"
+                       "⚓ SUBMARINE: one sonar row  ·  PATROL BOAT: optional hidden mine")
+        rules.setStyleSheet("background: rgba(0, 245, 196, 0.05); border: 1px solid rgba(0, 245, 196, 0.2); border-radius: 10px; padding: 10px 14px; color: #7dd3fc; font-size: 11px; line-height: 1.5;")
         rules.setWordWrap(True); box.addWidget(rules)
-        box.addWidget(QLabel(f"{session['current_player']} · {view['phase']}"))
+        phase_badge = QLabel(f"◈ {session['current_player']}  ·  {view['phase'].upper()}")
+        phase_badge.setStyleSheet("background: rgba(0, 245, 196, 0.08); border: 1px solid rgba(0, 245, 196, 0.25); border-radius: 8px; padding: 6px 12px; color: #00f5c4; font-size: 11px; font-weight: 800; letter-spacing: 1px;")
+        box.addWidget(phase_badge)
 
         def refresh_board():
             self._board_signature = None
             self._show_session(session["id"])
 
         def grid_widget(cells, enabled=False, handler=None, marks=None, fleet=None):
-            board = QWidget(); grid = QGridLayout(board); grid.setSpacing(2); grid.setContentsMargins(0, 0, 0, 0)
+            board = QWidget(); grid = QGridLayout(board); grid.setSpacing(2); grid.setContentsMargins(8, 8, 8, 8)
+            board.setStyleSheet("QWidget { background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #0a1b28, stop:0.7 #06121c, stop:1 #030a10); border: 1px solid rgba(0, 245, 196, 0.22); border-radius: 12px; }")
+            _add_radar_coordinates(grid)
             for index in range(100):
                 mark = (marks or {}).get(index)
-                button = QPushButton("■" if index in cells else "□"); button.setFixedSize(27, 27)
+                txt = "■" if index in cells else "□"
+                button = QPushButton(txt); button.setFixedSize(28, 28)
+                _style_naval_button(button, txt, enabled=bool(enabled and handler is not None))
                 button.setEnabled(enabled and handler is not None)
                 if handler is not None:
                     button.clicked.connect(lambda _=False, cell=index: handler(cell))
-                grid.addWidget(button, index // 10, index % 10)
+                grid.addWidget(button, (index // 10) + 1, (index % 10) + 1)
             assets = Path(__file__).with_name("web_assets")
             sprites = ("battleship-carrier.png", "battleship-hull.png", "battleship-cruiser.png",
                        "battleship-destroyer.png", "battleship-submarine.png", "battleship-patrol.png")
@@ -2098,18 +2388,18 @@ class ArcadeWindow(QMainWindow):
                 sprite = QPixmap(str(assets / name))
                 if sprite.isNull(): continue
                 length = len(ship)
-                width, height = (27, length*27+2*(length-1)) if vertical_ship else (length*27+2*(length-1), 27)
+                width, height = (28, length*28+2*(length-1)) if vertical_ship else (length*28+2*(length-1), 28)
                 image = QLabel(); image.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
                 image.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 image.setPixmap(sprite.scaled(width, height, Qt.AspectRatioMode.IgnoreAspectRatio,
                                               Qt.TransformationMode.SmoothTransformation))
-                grid.addWidget(image, row, col, length if vertical_ship else 1,
+                grid.addWidget(image, row + 1, col + 1, length if vertical_ship else 1,
                                1 if vertical_ship else length)
             for index, mark in (marks or {}).items():
-                token=QLabel(mark);token.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                token = QLabel(mark); token.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 token.setStyleSheet("color:#ffd080;font-size:17px;font-weight:800;background:transparent")
                 token.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-                grid.addWidget(token,index//10,index%10)
+                grid.addWidget(token, (index // 10) + 1, (index % 10) + 1)
             return board
 
         if view["phase"] == "setup" and not session.get("private_fleet"):
@@ -2215,6 +2505,8 @@ class ArcadeWindow(QMainWindow):
                     if mode.currentData() == "double":
                         enabled = enabled and col < 9 and view["shots"][index+1] == 0
                     item.setEnabled(enabled)
+                    if view["shots"][index] == 0:
+                        _style_naval_button(item, "□", enabled=enabled)
             mode.currentIndexChanged.connect(update_mode); update_mode()
             if any(value != 255 for value in view.get("sonar", [])):
                 sonar_text = " · ".join(f"Row {i+1}: {('clear','faint','strong')[value]}" for i, value in enumerate(view["sonar"]) if value != 255)
@@ -2233,11 +2525,17 @@ class ArcadeWindow(QMainWindow):
             move.clicked.connect(lambda: self._submit_action(bytes((200 + vessel.currentIndex()*4 + direction.currentIndex(),))))
             move_row.addWidget(vessel); move_row.addWidget(direction); move_row.addWidget(move); box.addLayout(move_row)
 
-            box.addWidget(QLabel("Enemy waters · hits do not identify sunk ships"))
-            enemy = QWidget(); grid = QGridLayout(enemy); grid.setSpacing(2)
+            enemy_header = QLabel("ENEMY WATERS · HITS DO NOT IDENTIFY SUNK SHIPS")
+            enemy_header.setStyleSheet("color: #f43f5e; font-size: 11px; font-weight: 800; letter-spacing: 1px;")
+            box.addWidget(enemy_header)
+            enemy = QWidget(); grid = QGridLayout(enemy); grid.setSpacing(2); grid.setContentsMargins(8, 8, 8, 8)
+            enemy.setStyleSheet("QWidget { background: qradialgradient(cx:0.5, cy:0.5, radius:0.8, fx:0.5, fy:0.5, stop:0 #0a1b28, stop:0.7 #06121c, stop:1 #030a10); border: 1px solid rgba(0, 245, 196, 0.22); border-radius: 12px; }")
+            _add_radar_coordinates(grid)
             for cell, value in enumerate(view["shots"]):
                 row, col = divmod(cell, 10)
-                button = QPushButton("·" if value == 1 else "×" if value == 2 else "□"); button.setFixedSize(27, 27)
+                txt = "·" if value == 1 else "×" if value == 2 else "□"
+                button = QPushButton(txt); button.setFixedSize(28, 28)
+                _style_naval_button(button, value if value else txt, enabled=True)
                 def fire(_=False, cell=cell):
                     action_mode = mode.currentData()
                     if action_mode == "sonar": return
@@ -2246,7 +2544,7 @@ class ArcadeWindow(QMainWindow):
                         code = 100 + (cell//10)*9 + cell%10
                     else: code = cell
                     self._submit_action(bytes((code,)))
-                button.clicked.connect(fire); grid.addWidget(button, row, col); enemy_buttons.append(button)
+                button.clicked.connect(fire); grid.addWidget(button, row + 1, col + 1); enemy_buttons.append(button)
             update_mode()
             box.addWidget(enemy)
         self.board_layout.addWidget(host)
@@ -2287,9 +2585,13 @@ class ArcadeWindow(QMainWindow):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         controls = QWidget(); controls.setObjectName("scorchedControls"); box = QVBoxLayout(controls)
         box.setContentsMargins(6, 2, 6, 2); box.setSpacing(9)
-        box.addWidget(QLabel(f"{view['map_name']} · turn {view['round'] + 1}"))
+        map_card = QLabel(f"◈ {view['map_name'].upper()}  ·  TURN {view['round'] + 1}")
+        map_card.setStyleSheet("color: #00f5c4; font-size: 11px; font-weight: 800; letter-spacing: 1px;")
+        box.addWidget(map_card)
         wind = view["wind"]
-        box.addWidget(QLabel(f"Wind {wind['direction']} {wind['label']}"))
+        wind_lbl = QLabel(f"WIND  {wind['direction']}  {wind['label'].upper()}")
+        wind_lbl.setStyleSheet("background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.22); border-radius: 6px; padding: 4px 8px; color: #7dd3fc; font-size: 10px; font-weight: 700;")
+        box.addWidget(wind_lbl)
         can_play = (not self.settings.observer_mode and session["status"] == "active"
                     and not session["pending_action"] and not session.get("resync_pending") and
                     (self.settings.transport == "practice" or
@@ -2297,8 +2599,10 @@ class ArcadeWindow(QMainWindow):
         actor = session["current_player"] if self.settings.transport == "practice" else self.settings.callsign
         tank = next((item for item in view["tanks"] if item["player"] == actor), None)
         for item in view["tanks"]:
-            box.addWidget(QLabel(f"{item['player']}: ¤{item['credits']} · "
-                                 f"{item['fuel']} fuel · {item['repair_kits']} repairs"))
+            is_actor = item["player"] == actor
+            tank_lbl = QLabel(f"{item['player']}: ¤{item['credits']} · {item['fuel']} fuel · {item['repair_kits']} repairs")
+            tank_lbl.setStyleSheet("color: #00f5c4; font-size: 11px; font-weight: 700; background: rgba(0, 245, 196, 0.06); border: 1px solid rgba(0, 245, 196, 0.18); border-radius: 6px; padding: 4px 8px;" if is_actor else "color: #94a3b8; font-size: 11px; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 4px 8px;")
+            box.addWidget(tank_lbl)
         weapon = QComboBox(); weapon.setObjectName("scorchedWeapon")
         for item in view["weapons"]:
             stock = tank["ammo"][item["id"]] if tank else 0
@@ -2315,10 +2619,12 @@ class ArcadeWindow(QMainWindow):
             lambda: self._scorched_weapons.__setitem__(weapon_key, int(weapon.currentData())))
         box.addWidget(weapon)
         angle_label = QLabel("Angle: 45°")
+        angle_label.setStyleSheet("color: #38bdf8; font-size: 11px; font-weight: 700;")
         angle = QSlider(Qt.Orientation.Horizontal); angle.setObjectName("scorchedAngle")
         angle.setRange(view["min_angle"], view["max_angle"]); angle.setValue(45)
         box.addWidget(angle_label); box.addWidget(angle)
         power_label = QLabel("Power: 100%")
+        power_label.setStyleSheet("color: #00f5c4; font-size: 11px; font-weight: 700;")
         power = QSlider(Qt.Orientation.Horizontal); power.setObjectName("scorchedPower")
         power.setRange(view["min_power"] // view["power_step"], view["max_power"] // view["power_step"])
         power.setValue(view["max_power"] // view["power_step"])
@@ -2378,7 +2684,9 @@ class ArcadeWindow(QMainWindow):
         shield.setEnabled(bool(can_play and tank and not tank["shielded"]))
         shield.clicked.connect(lambda: self._submit_action(bytes((view["actions"]["shield"], 0))))
         box.addWidget(repair); box.addWidget(shield)
-        box.addWidget(QLabel("ARMORY · buying uses your turn"))
+        armory_hdr = QLabel("ARMORY · BUYING USES YOUR TURN")
+        armory_hdr.setStyleSheet("color: #fbbf24; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; margin-top: 4px;")
+        box.addWidget(armory_hdr)
         for item in view["weapons"][1:]:
             buy = QPushButton(f"{item['name']} · ¤{item['cost']}")
             buy.setEnabled(bool(can_play and tank and tank["credits"] >= item["cost"] and tank["ammo"][item["id"]] < 254))
