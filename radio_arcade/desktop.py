@@ -946,7 +946,7 @@ class ArcadeWindow(QMainWindow):
             try: self.sync_button.setText(self._sync_label_for_session(self.engine.session(self.selected_id)))
             except KeyError: self.sync_button.setText("↻  Resync table")
         if compact == (self.layout_stack.currentWidget() is self.compact_tabs):
-            self.game_subtitle.setVisible((not compact or self.width() >= 520) and self.height() >= 680)
+            self.game_subtitle.setVisible((not compact or self.width() >= 520) and self.height() >= 800)
             self._update_vertical_density()
             return
         if compact:
@@ -965,7 +965,7 @@ class ArcadeWindow(QMainWindow):
         self.root_layout.setContentsMargins(*( (8, 8, 8, 8) if compact else (22, 20, 22, 18) ))
         self.root_layout.setSpacing(8 if compact else 16)
         self.brand.setText("◈  ARCADE" if compact else "◈  RADIO ARCADE")
-        self.game_subtitle.setVisible((not compact or self.width() >= 520) and self.height() >= 680)
+        self.game_subtitle.setVisible((not compact or self.width() >= 520) and self.height() >= 800)
         self.transport_label.setVisible(not compact)
         if hasattr(self, "status_pill"):
             self.status_pill.setVisible(not compact)
@@ -993,7 +993,7 @@ class ArcadeWindow(QMainWindow):
         self.session_list.setMinimumHeight(50 if compact else 70)
         self.session_list.setVisible(not compact or self.session_list.count() > 0)
         has_score = bool(self.scoreboard_compact.text())
-        short = self.height() < 680
+        short = self.height() < 800
         tight = self.height() < 500
         self.scoreboard_compact.setVisible((compact or short) and has_score and not tight)
         self.scoreboard_host.setVisible(not compact and not short and has_score)
@@ -1004,7 +1004,7 @@ class ArcadeWindow(QMainWindow):
         if not hasattr(self, "board_scroll"):
             return
         compact = self.layout_stack.currentWidget() is self.compact_tabs
-        short = self.height() < 680
+        short = self.height() < 800
         tight = self.height() < 500
         dense = compact or short
 
@@ -1810,7 +1810,7 @@ class ArcadeWindow(QMainWindow):
             self.scoreboard_layout.takeAt(0).widget().deleteLater()
         score_visible = bool(session and session.get("view"))
         compact = self.layout_stack.currentWidget() is self.compact_tabs
-        short = self.height() < 680
+        short = self.height() < 800
         tight = self.height() < 500
         self.scoreboard_host.setVisible(score_visible and not compact and not short)
         self.scoreboard_compact.setVisible(score_visible and (compact or short))
